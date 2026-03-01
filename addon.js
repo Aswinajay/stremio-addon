@@ -56,10 +56,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
             return {
                 name: "Render",
                 title: streamTitle,
-                url: `${currentHost}/stream/${infoHash}`,
-                behaviorHints: {
-                    notWebReady: true,
-                }
+                url: `${currentHost}/stream/${infoHash}`
             };
         }).filter(stream => stream.url.includes('/stream/undefined') === false);
 
