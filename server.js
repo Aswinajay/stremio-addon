@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '1.2.0',
+        version: '1.4.0',
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
         uptime: process.uptime(),
@@ -25,9 +25,7 @@ app.get('/health', (_req, res) => {
 const axios = require('axios');
 app.get('/debug', async (_req, res) => {
     const results = {};
-
-    // Test YTS
-    for (const mirror of ['https://yts.torrentbay.st', 'https://movies-api.accel.li', 'https://yts.autos']) {
+    for (const mirror of ['https://yts.torrentbay.st', 'https://movies-api.accel.li']) {
         try {
             const url = `${mirror}/api/v2/movie_details.json?imdb_id=tt1375666`;
             const r = await axios.get(url, { timeout: 10000 });
@@ -37,18 +35,21 @@ app.get('/debug', async (_req, res) => {
             results[mirror] = { status: 'error', message: err.message, code: err.response?.status };
         }
     }
-
-    // Test EZTV
     try {
         const url = 'https://eztvx.to/api/get-torrents?imdb_id=0944947&limit=5';
         const r = await axios.get(url, { timeout: 10000 });
-        const torrents = r.data?.torrents?.length || 0;
-        results['eztv'] = { status: 'ok', torrents };
+        results['eztv'] = { status: 'ok', torrents: r.data?.torrents?.length || 0 };
     } catch (err) {
         results['eztv'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-
-    res.json({ version: '1.2.0', results });
+    try {
+        const url = 'https://apibay.org/q.php?q=test&cat=0';
+        const r = await axios.get(url, { timeout: 10000 });
+        results['tpb'] = { status: 'ok', count: r.data?.length || 0 };
+    } catch (err) {
+        results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
+    }
+    res.json({ version: '1.4.0', results });
 });
 
 // ─── Stremio Addon SDK routes ────────────────────────────
@@ -56,8 +57,9 @@ const addonRouter = getRouter(addonInterface);
 app.use(addonRouter);
 
 // ─── Torrent Engine Management ───────────────────────────
-const MAX_ENGINES = 3; // Keep memory under 512MB
-const ENGINE_TIMEOUT = 5 * 60 * 1000; // 5 min idle timeout
+const MAX_ENGINES = 3;
+const ENGINE_TIMEOUT = 5 * 60 * 1000; // 5 min idle
+const CONNECT_TIMEOUT = 60000; // 60s to connect to torrent
 const activeEngines = {};
 
 function getTrackers() {
@@ -79,12 +81,10 @@ function buildMagnet(infoHash) {
     return `magnet:?xt=urn:btih:${infoHash}${trackerParams}`;
 }
 
-// Evict least-recently-used engine if at capacity
 function evictIfNeeded() {
     const keys = Object.keys(activeEngines);
     if (keys.length < MAX_ENGINES) return;
 
-    // Find the one with the oldest lastAccess
     let oldest = null;
     let oldestTime = Infinity;
     for (const key of keys) {
@@ -95,7 +95,7 @@ function evictIfNeeded() {
     }
 
     if (oldest) {
-        console.log(`[Engine] Evicting idle engine: ${oldest}`);
+        console.log(`[Engine] Evicting idle engine: ${oldest.substring(0, 8)}…`);
         destroyEngine(oldest);
     }
 }
@@ -123,7 +123,7 @@ function getOrCreateEngine(infoHash) {
         clearTimeout(entry.timeout);
         entry.timeout = setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT);
 
-        return entry.engine;
+        return { engine: entry.engine, isReady: entry.isReady };
     }
 
     // Evict if at capacity
@@ -134,20 +134,27 @@ function getOrCreateEngine(infoHash) {
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
-        connections: 50,
-        uploads: 0, // Don't upload (save bandwidth)
+        connections: 100,
+        uploads: 0,
         verify: true,
         dht: true,
     });
 
     const entry = {
         engine,
+        isReady: false,
         lastAccess: Date.now(),
         timeout: setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT),
     };
 
+    // Mark ready when the engine fires 'ready'
+    engine.on('ready', () => {
+        entry.isReady = true;
+        console.log(`[Engine] Ready: ${infoHash.substring(0, 8)}… (${engine.files.length} files)`);
+    });
+
     activeEngines[infoHash] = entry;
-    return engine;
+    return { engine, isReady: false };
 }
 
 // ─── Video file detection ────────────────────────────────
@@ -159,12 +166,10 @@ function isVideoFile(filename) {
 }
 
 function findVideoFile(files, fileIdx) {
-    // If fileIdx is specified, use that directly
     if (fileIdx !== undefined && fileIdx !== null && files[fileIdx]) {
         return files[fileIdx];
     }
 
-    // Otherwise find the largest video file
     let bestFile = null;
     let bestSize = 0;
 
@@ -178,6 +183,64 @@ function findVideoFile(files, fileIdx) {
     return bestFile;
 }
 
+// ─── Serve video file with Range support ─────────────────
+function serveVideoFile(file, req, res, infoHash) {
+    const totalSize = file.length;
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    const mimeTypes = {
+        mp4: 'video/mp4',
+        mkv: 'video/x-matroska',
+        avi: 'video/x-msvideo',
+        mov: 'video/quicktime',
+        wmv: 'video/x-ms-wmv',
+        flv: 'video/x-flv',
+        webm: 'video/webm',
+        m4v: 'video/mp4',
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+    const rangeHeader = req.headers.range;
+
+    if (rangeHeader) {
+        const parts = rangeHeader.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+        const chunkSize = end - start + 1;
+
+        console.log(`[Stream] Range: ${start}-${end}/${totalSize} (${(chunkSize / 1024 / 1024).toFixed(1)} MB)`);
+
+        res.writeHead(206, {
+            'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': chunkSize,
+            'Content-Type': contentType,
+        });
+
+        const stream = file.createReadStream({ start, end });
+        stream.pipe(res);
+        stream.on('error', (err) => {
+            console.error(`[Stream] Read error: ${err.message}`);
+            if (!res.headersSent) res.status(500).end();
+        });
+    } else {
+        console.log(`[Stream] Full file: ${(totalSize / 1024 / 1024).toFixed(1)} MB`);
+
+        res.writeHead(200, {
+            'Content-Length': totalSize,
+            'Content-Type': contentType,
+            'Accept-Ranges': 'bytes',
+        });
+
+        const stream = file.createReadStream();
+        stream.pipe(res);
+        stream.on('error', (err) => {
+            console.error(`[Stream] Read error: ${err.message}`);
+            if (!res.headersSent) res.status(500).end();
+        });
+    }
+}
+
 // ─── Stream Proxy Route ─────────────────────────────────
 app.get('/stream/:infoHash', (req, res) => {
     const { infoHash } = req.params;
@@ -185,13 +248,30 @@ app.get('/stream/:infoHash', (req, res) => {
 
     console.log(`[Stream] Request for ${infoHash.substring(0, 8)}… fileIdx=${fileIdx}`);
 
-    const engine = getOrCreateEngine(infoHash);
-    let responded = false;
+    const { engine, isReady } = getOrCreateEngine(infoHash);
 
-    // Handle client disconnect
     req.on('close', () => {
         console.log(`[Stream] Client disconnected: ${infoHash.substring(0, 8)}…`);
     });
+
+    // If engine is already ready (cached), serve immediately
+    if (isReady && engine.files && engine.files.length > 0) {
+        console.log(`[Stream] Engine already ready, serving immediately`);
+        const file = findVideoFile(engine.files, fileIdx);
+
+        if (!file) {
+            console.error(`[Stream] No video file found in cached torrent`);
+            res.status(404).json({ error: 'No video file found in this torrent' });
+            return;
+        }
+
+        console.log(`[Stream] Serving: "${file.name}" (${(file.length / 1024 / 1024).toFixed(1)} MB)`);
+        serveVideoFile(file, req, res, infoHash);
+        return;
+    }
+
+    // Engine is new, wait for 'ready' event
+    let responded = false;
 
     engine.on('ready', () => {
         if (responded) return;
@@ -206,73 +286,9 @@ app.get('/stream/:infoHash', (req, res) => {
         }
 
         console.log(`[Stream] Serving: "${file.name}" (${(file.length / 1024 / 1024).toFixed(1)} MB)`);
-
-        const totalSize = file.length;
-
-        // Determine Content-Type from extension
-        const ext = file.name.split('.').pop().toLowerCase();
-        const mimeTypes = {
-            mp4: 'video/mp4',
-            mkv: 'video/x-matroska',
-            avi: 'video/x-msvideo',
-            mov: 'video/quicktime',
-            wmv: 'video/x-ms-wmv',
-            flv: 'video/x-flv',
-            webm: 'video/webm',
-            m4v: 'video/mp4',
-        };
-        const contentType = mimeTypes[ext] || 'application/octet-stream';
-
-        // Handle Range requests (seeking support)
-        const rangeHeader = req.headers.range;
-
-        if (rangeHeader) {
-            const parts = rangeHeader.replace(/bytes=/, '').split('-');
-            const start = parseInt(parts[0], 10);
-            const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
-            const chunkSize = end - start + 1;
-
-            console.log(`[Stream] Range: ${start}-${end}/${totalSize} (${(chunkSize / 1024 / 1024).toFixed(1)} MB)`);
-
-            res.writeHead(206, {
-                'Content-Range': `bytes ${start}-${end}/${totalSize}`,
-                'Accept-Ranges': 'bytes',
-                'Content-Length': chunkSize,
-                'Content-Type': contentType,
-            });
-
-            const stream = file.createReadStream({ start, end });
-            stream.pipe(res);
-
-            stream.on('error', (err) => {
-                console.error(`[Stream] Read error: ${err.message}`);
-                if (!res.headersSent) {
-                    res.status(500).end();
-                }
-            });
-        } else {
-            // Full file request
-            console.log(`[Stream] Full file request: ${(totalSize / 1024 / 1024).toFixed(1)} MB`);
-
-            res.writeHead(200, {
-                'Content-Length': totalSize,
-                'Content-Type': contentType,
-                'Accept-Ranges': 'bytes',
-            });
-
-            const stream = file.createReadStream();
-            stream.pipe(res);
-
-            stream.on('error', (err) => {
-                console.error(`[Stream] Read error: ${err.message}`);
-                if (!res.headersSent) {
-                    res.status(500).end();
-                }
-            });
-        }
+        serveVideoFile(file, req, res, infoHash);
     });
 
-    // Handle engine errors
     engine.on('error', (err) => {
         console.error(`[Engine Error] ${err.message}`);
         if (!responded) {
@@ -281,14 +297,14 @@ app.get('/stream/:infoHash', (req, res) => {
         }
     });
 
-    // Timeout: if torrent doesn't connect in 30s, give up
+    // Timeout: if torrent doesn't connect, give up
     setTimeout(() => {
         if (!responded) {
             responded = true;
-            console.error(`[Stream] Timeout waiting for torrent: ${infoHash.substring(0, 8)}…`);
-            res.status(504).json({ error: 'Torrent connection timed out' });
+            console.error(`[Stream] Timeout (${CONNECT_TIMEOUT / 1000}s) for torrent: ${infoHash.substring(0, 8)}…`);
+            res.status(504).json({ error: 'Torrent connection timed out — try a different quality or torrent with more seeders' });
         }
-    }, 30000);
+    }, CONNECT_TIMEOUT);
 });
 
 // ─── Start Server ────────────────────────────────────────
