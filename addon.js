@@ -11,7 +11,7 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.8.0',
+    version: '2.8.5',
     name: 'Render Torrent Stream',
     description: 'Stream from 30+ massive sources (Official Torrentio, YTS, Indian, SolidTorrents, Nyaa, Bitsearch, TPB) — 100% buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -247,24 +247,29 @@ async function bitsearchSearch(q) {
 
 // 4.5 TPB IMDB Lookup (Powerful for Indian & Niche content)
 async function tpbImdbLookup(imdbId) {
-    try {
-        const url = `${TPB_API}/q.php?q=${imdbId}&cat=0`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
-        const results = (r.data || []).filter(t =>
-            t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
-            t.name !== 'No results returned'
-        );
-        if (!results.length) return [];
+    const mirrors = [TPB_API, 'https://tpbay.win', 'https://tpb.party', 'https://pirateproxy.live'];
+    for (const mirror of mirrors) {
+        try {
+            const url = `${mirror}/q.php?q=${imdbId}&cat=0`;
+            const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+            if (r.status === 403) continue;
+            const results = (r.data || []).filter(t =>
+                t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
+                t.name !== 'No results returned'
+            );
+            if (!results.length) continue;
 
-        console.log(`[TPB-IMDB] ✓ ${results.length} results found for ${imdbId}`);
-        return results.map(r => ({
-            hash: r.info_hash?.toLowerCase(),
-            title: r.name,
-            size: formatSize(r.size),
-            seeds: parseInt(r.seeders) || 0,
-            source: 'TPB-Direct',
-        })).filter(t => t.hash);
-    } catch (e) { console.error(`[TPB-IMDB] ${e.message}`); return []; }
+            console.log(`[TPB-IMDB] ✓ ${results.length} results found for ${imdbId} via ${mirror}`);
+            return results.map(r => ({
+                hash: r.info_hash?.toLowerCase(),
+                title: r.name,
+                size: formatSize(r.size),
+                seeds: parseInt(r.seeders) || 0,
+                source: 'TPB-Direct',
+            })).filter(t => t.hash);
+        } catch (e) { continue; }
+    }
+    return [];
 }
 
 // ═══════════════════════════════════════════════════════════

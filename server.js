@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '2.8.0',
+        version: '2.8.5',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
@@ -50,7 +50,7 @@ app.get('/debug', async (_req, res) => {
     } catch (err) {
         results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-    res.json({ version: '2.8.0', results });
+    res.json({ version: '2.8.5', results });
 });
 
 // ─── Dashboard ───────────────────────────────────────────
@@ -307,6 +307,13 @@ function destroyEngine(infoHash) {
     const entry = activeEngines[infoHash];
     if (!entry) return;
 
+    // If there are active streams, don't destroy, just reschedule
+    if (entry.activeStreams > 0) {
+        console.log(`[Engine] Postponing destruction for ${infoHash.substring(0, 8)}: ${entry.activeStreams} active streams`);
+        resetEngineTimeout(infoHash);
+        return;
+    }
+
     clearTimeout(entry.timeout);
     if (entry.logInterval) clearInterval(entry.logInterval);
     try {
@@ -350,6 +357,7 @@ function getOrCreateEngine(infoHash) {
     const entry = {
         engine,
         isReady: false,
+        activeStreams: 0,
         lastAccess: Date.now(),
         timeout: setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT),
     };
@@ -406,6 +414,17 @@ function findVideoFile(files, fileIdx) {
 // ─── Serve video file with Range support ─────────────────
 function serveVideoFile(file, req, res, infoHash) {
     resetEngineTimeout(infoHash);
+
+    const entry = activeEngines[infoHash];
+    if (entry) entry.activeStreams++;
+
+    req.on('close', () => {
+        if (entry) {
+            entry.activeStreams = Math.max(0, entry.activeStreams - 1);
+            resetEngineTimeout(infoHash);
+        }
+    });
+
     const totalSize = file.length;
 
     const ext = file.name.split('.').pop().toLowerCase();
