@@ -317,12 +317,46 @@ async function tpbHDSeriesSearch(showName, season, episode) {
 }
 
 // ─── Dedup + Build Streams ───────────────────────────────
+const QUALITY_RANKS = {
+    '2160P': 6,
+    '4K': 6,
+    '1080P': 5,
+    '720P': 4,
+    '480P': 3,
+    'HDRIP': 2,
+    'BDRIP': 2,
+    'WEBRIP': 2,
+    'WEB-DL': 2,
+    'BLURAY': 2,
+    'HDTV': 2,
+    '?': 1
+};
+
+function getQualityRank(qualityStr) {
+    if (!qualityStr) return 1;
+    const q = qualityStr.toUpperCase();
+    for (const [key, rank] of Object.entries(QUALITY_RANKS)) {
+        if (q.includes(key)) return rank;
+    }
+    return 1;
+}
+
 function buildStreams(torrents, baseUrl) {
     const streams = [];
     const seen = new Set();
 
-    // Sort by seeders (most seeders first)
-    torrents.sort((a, b) => (b.seeds || 0) - (a.seeds || 0));
+    // Sort by resolution (highest first), then seeders (most first)
+    torrents.sort((a, b) => {
+        const qA = a.quality || parseQuality(a.title);
+        const qB = b.quality || parseQuality(b.title);
+        const rankA = getQualityRank(qA);
+        const rankB = getQualityRank(qB);
+
+        if (rankA !== rankB) {
+            return rankB - rankA;
+        }
+        return (b.seeds || 0) - (a.seeds || 0);
+    });
 
     for (const t of torrents) {
         if (!t.hash || seen.has(t.hash)) continue;
