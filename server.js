@@ -286,7 +286,7 @@ function getOrCreateEngine(infoHash) {
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
-        connections: 110,           // Optimal connections to find fast peers without exhausting Render's CPU limit
+        connections: 20,           // Optimal connections to find fast peers without exhausting Render's CPU limit
         uploads: 0,                 // Do not upload to save bandwidth/CPU
         verify: false,              // Skip piece hash verification to save massive CPU 
         dht: true,                  // Use DHT
