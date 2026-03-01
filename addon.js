@@ -11,9 +11,9 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.1.0',
+    version: '2.2.0',
     name: 'Render Torrent Stream',
-    description: 'Stream movies & series from 10+ sources (TorrentsDB, YTS, Comet, TPB+, EZTV) — 100% buffer-free proxy streaming',
+    description: 'Stream movies, series & anime from 15+ sources (1337x, RARBG, TorrentGalaxy, YTS, TPB+, Comet, Nyaa) — 100% buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
@@ -426,14 +426,20 @@ builder.defineStreamHandler(async ({ type, id }) => {
                     const ytsSearch$ = await ytsSearch(meta.name, meta.year);
                     allTorrents.push(...ytsSearch$);
 
-                    // Source 3-6: Parallel extra sources
-                    const extra = await Promise.allSettled([
-                        tpbMovieSearch(meta.name, meta.year),
-                        tpbHDMovieSearch(meta.name, meta.year),
+                    // Source 3-10: Meta-Scraper Fetch (Parallel)
+                    const metaScrapers = [
                         fetchTorrentio('movie', id),
                         fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
                         fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
+                        fetchStremioAddon('MediaFusion', 'https://mediafusion.elfhosted.com/indexers=torrentio', 'movie', id),
+                    ];
+
+                    const extra = await Promise.allSettled([
+                        tpbMovieSearch(meta.name, meta.year),
+                        tpbHDMovieSearch(meta.name, meta.year),
+                        ...metaScrapers
                     ]);
+
                     extra.forEach(s => {
                         if (s.status === 'fulfilled') allTorrents.push(...s.value);
                     });
@@ -443,12 +449,15 @@ builder.defineStreamHandler(async ({ type, id }) => {
                 const meta = await getMeta(id, 'movie');
                 if (meta?.name) {
                     try {
-                        const extra = await Promise.allSettled([
-                            tpbMovieSearch(meta.name, meta.year),
-                            tpbHDMovieSearch(meta.name, meta.year),
+                        const metaScrapers = [
                             fetchTorrentio('movie', id),
                             fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
                             fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
+                        ];
+                        const extra = await Promise.allSettled([
+                            tpbMovieSearch(meta.name, meta.year),
+                            tpbHDMovieSearch(meta.name, meta.year),
+                            ...metaScrapers
                         ]);
                         extra.forEach(s => {
                             if (s.status === 'fulfilled') allTorrents.push(...s.value);
@@ -473,12 +482,13 @@ builder.defineStreamHandler(async ({ type, id }) => {
             const meta = await getMeta(imdbId, 'series');
             const showName = meta?.name;
 
-            // Query ALL series sources in parallel
+            // Query ALL series sources in parallel for maximum speed
             const sources = await Promise.allSettled([
                 eztvSearch(imdbId, season, episode),
                 fetchTorrentio('series', id),
                 fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'series', id),
                 fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'series', id),
+                fetchStremioAddon('MediaFusion', 'https://mediafusion.elfhosted.com/indexers=torrentio', 'series', id),
                 showName ? tpbSeriesSearch(showName, season, episode) : Promise.resolve([]),
                 showName ? tpbHDSeriesSearch(showName, season, episode) : Promise.resolve([]),
             ]);
