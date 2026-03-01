@@ -17,7 +17,7 @@ const TPB_MIRRORS = [
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.5.10',
+    version: '3.5.11',
     name: 'Render Torrent Stream (Hydra+)',
     description: 'Auto-rotating Scrapers | Multi-Format Series Search | 4K HDR',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -480,16 +480,8 @@ function buildStreams(torrents, baseUrl) {
         return (b.seeds || 0) - (a.seeds || 0);
     });
 
-    // 3. Speed Boost: Filter out zero-seed & CAM/TS torrents
-    const filtered = uniqueTorrents.filter(t => {
-        if ((t.seeds || 0) < 1) return false; // No seeders = will never download
-        const q = (t.quality || parseQuality(t.title)).toUpperCase();
-        if (q === 'CAM' || q === 'TS' || q === 'TELESYNC') return false; // Skip garbage
-        return true;
-    });
-
-    // 4. Map top 60 uniquely combined results into final streams
-    for (const t of filtered.slice(0, 60)) {
+    // 3. Optional: Map ALL uniquely combined results into final streams (No limits, no hard filters)
+    for (const t of uniqueTorrents) {
         const quality = t.quality || parseQuality(t.title);
         let info = '';
         if (t.codec) info += `${t.codec}`;
