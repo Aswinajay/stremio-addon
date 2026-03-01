@@ -35,7 +35,10 @@ builder.defineStreamHandler(async ({ type, id }) => {
     }
 
     try {
-        const response = await axios.get(`https://torrentio.strem.fun/stream/${type}/${id}.json`);
+        const response = await axios.get(`https://torrentio.strem.fun/stream/${type}/${id}.json`, {
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+            timeout: 15000
+        });
         const data = response.data;
 
         if (!data || !data.streams || data.streams.length === 0) {
@@ -51,6 +54,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
             // Provide a fallback title just in case
             const streamTitle = torrent.title || `Render Stream - ${infoHash.substring(0, 6)}`;
             return {
+                name: "Render",
                 title: streamTitle,
                 url: `${currentHost}/stream/${infoHash}`,
                 behaviorHints: {
