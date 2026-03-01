@@ -7,16 +7,20 @@ const manifest = {
     name: 'Render Torrent Stream',
     description: 'Streams torrents through Render.com servers to avoid local P2P buffering.',
     logo: 'https://cdn-icons-png.flaticon.com/512/888/888874.png',
-    resources: ['stream', 'catalog'],
-    types: ['movie'],
-    idPrefixes: ['tt'],
-    catalogs: [
+    resources: [
         {
-            type: 'movie',
-            id: 'top',
-            name: 'Render Top Movies'
+            name: 'stream',
+            types: ['movie', 'series'],
+            idPrefixes: ['tt']
         }
-    ]
+    ],
+    types: ['movie', 'series'],
+    idPrefixes: ['tt'],
+    catalogs: [],
+    behaviorHints: {
+        configurable: true,
+        configurationRequired: false
+    }
 };
 
 const builder = new addonBuilder(manifest);
@@ -30,7 +34,7 @@ const setHost = (host) => {
 builder.defineStreamHandler(async ({ type, id }) => {
     console.log('[addon] stream request for type:', type, 'id:', id);
 
-    if (type !== 'movie' || !id.startsWith('tt')) {
+    if (!['movie', 'series'].includes(type) || !id.startsWith('tt')) {
         return Promise.resolve({ streams: [] });
     }
 
@@ -67,20 +71,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
     }
 });
 
-builder.defineCatalogHandler(async ({ type, id }) => {
-    console.log('[addon] catalog request:', type, id);
-    if (type === 'movie' && id === 'top') {
-        try {
-            // Forward Cinemeta's top movies so the addon's home board populates with items
-            const res = await axios.get('https://cinemeta-catalogs.strem.io/top/catalog/movie/top.json', { timeout: 10000 });
-            return { metas: res.data.metas || [] };
-        } catch (e) {
-            console.error('[addon] Catalog fetch failed', e.message);
-            return { metas: [] };
-        }
-    }
-    return { metas: [] };
-});
+
 
 module.exports = {
     addonInterface: builder.getInterface(),
