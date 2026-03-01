@@ -213,7 +213,7 @@ app.use(addonRouter);
 
 // ─── Torrent Engine Management ───────────────────────────
 const MAX_ENGINES = 4;           // Harder cap for Render 512MB
-const RAM_LIMIT_MB = 300;        // Start evicting early to prevent OOM
+const RAM_LIMIT_MB = 200;        // Start evicting early to prevent OOM
 const ENGINE_TIMEOUT = 5 * 60 * 1000;
 const CONNECT_TIMEOUT = 90000;
 const ZOMBIE_TIMEOUT = 2 * 60 * 1000;
