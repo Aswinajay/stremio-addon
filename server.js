@@ -360,25 +360,55 @@ function getOrCreateEngine(infoHash) {
         timeout: setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT),
     };
 
-    // Log speed every 5 seconds + track zombie state
-    entry.lastNonZeroSpeed = Date.now(); // start with current time
+    // ─── Dynamic Speed Manager ───────────────────────────
+    entry.lastNonZeroSpeed = Date.now();
+    entry.speedSamples = []; // rolling window of speed samples
+    let slowPeerEvictionTick = 0;
+
     entry.logInterval = setInterval(() => {
         if (!engine.swarm) return;
-        const speed = (engine.swarm.downloadSpeed() / 1024 / 1024).toFixed(2);
+        const speedBps = engine.swarm.downloadSpeed();
+        const speedMb = (speedBps / 1024 / 1024).toFixed(2);
         const peers = engine.swarm.wires.length;
         const downloaded = (engine.swarm.downloaded / 1024 / 1024).toFixed(2);
 
-        if (parseFloat(speed) > 0) {
-            entry.lastNonZeroSpeed = Date.now(); // reset zombie timer
+        // Track non-zero speed for zombie detection
+        if (parseFloat(speedMb) > 0) {
+            entry.lastNonZeroSpeed = Date.now();
         }
 
-        // Only log if it's actually doing something
-        if (speed > 0 || peers > 0) {
-            console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speed} MB/s | 👥 ${peers} peers | 💾 ${downloaded} MB`);
+        // Rolling speed window (last 6 samples = 30s)
+        entry.speedSamples.push(parseFloat(speedMb));
+        if (entry.speedSamples.length > 6) entry.speedSamples.shift();
+        const avgSpeed = entry.speedSamples.reduce((a, b) => a + b, 0) / entry.speedSamples.length;
+
+        // ── Slow Peer Eviction (every 30s = 6 ticks) ──────
+        slowPeerEvictionTick++;
+        if (slowPeerEvictionTick >= 6) {
+            slowPeerEvictionTick = 0;
+            let evicted = 0;
+            for (const wire of [...engine.swarm.wires]) {
+                try {
+                    const peerSpeed = wire.downloadSpeed ? wire.downloadSpeed() : 0;
+                    // Evict peers that have been uploading 0 bytes and we have plenty of others
+                    if (peerSpeed === 0 && peers > 10 && wire.peerChoking) {
+                        wire.destroy();
+                        evicted++;
+                    }
+                } catch (e) { /* ignore */ }
+            }
+            if (evicted > 0) {
+                console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 🚫 Evicted ${evicted} slow peers`);
+            }
+        }
+
+        // Log if active
+        if (parseFloat(speedMb) > 0 || peers > 0) {
+            console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speedMb} MB/s | 👥 ${peers} peers | 💾 ${downloaded} MB | avg:${avgSpeed.toFixed(2)}`);
         }
     }, 5000);
 
-    // Global zombie scan: kill stalled engines every 90s
+    // Global zombie scan every 90s
     if (!global._zombieScannerStarted) {
         global._zombieScannerStarted = true;
         setInterval(() => {
@@ -397,23 +427,31 @@ function getOrCreateEngine(infoHash) {
         entry.isReady = true;
         console.log(`[Engine] Ready: ${infoHash.substring(0, 8)}… (${engine.files.length} files)`);
 
-        // ── Speed Boost: Priority Download ───────────────────
-        // Deselect everything first (stops downloading subtitles, nfo, etc.)
+        // ── Priority: Deselect all, then select only the video ──
         engine.files.forEach(f => f.deselect());
 
-        // Find the largest video file and prioritize it for sequential streaming
         let bestFile = null;
         let bestSize = 0;
         for (const f of engine.files) {
-            const ext = f.name.split('.').pop().toLowerCase();
             if (['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.webm', '.m4v'].some(e => f.name.toLowerCase().endsWith(e)) && f.length > bestSize) {
                 bestFile = f;
                 bestSize = f.length;
             }
         }
+
         if (bestFile) {
-            bestFile.select(); // Tell the engine: stream this file sequentially from piece 0
+            bestFile.select();
             console.log(`[Engine] Priority → "${bestFile.name}" (${(bestFile.length / 1024 / 1024).toFixed(0)} MB)`);
+
+            // ── Pre-buffer Warm-up: Read first 2MB to force download start ──
+            setTimeout(() => {
+                try {
+                    const warmStream = bestFile.createReadStream({ start: 0, end: Math.min(2 * 1024 * 1024, bestFile.length - 1) });
+                    warmStream.on('data', () => { }); // consume to drive the download
+                    warmStream.on('end', () => console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 🔥 Pre-buffer complete`));
+                    warmStream.on('error', () => { }); // ignore warm-up errors
+                } catch (e) { /* ignore */ }
+            }, 200); // slight delay to let file.select() take effect
         }
     });
 
