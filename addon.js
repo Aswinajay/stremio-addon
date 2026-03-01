@@ -3,7 +3,7 @@ const axios = require('axios');
 
 const manifest = {
     id: 'com.render.torrentstream',
-    version: '1.0.0',
+    version: '1.1.0',
     name: 'Render Torrent Stream',
     description: 'Streams torrents through Render.com servers to avoid local P2P buffering.',
     logo: 'https://cdn-icons-png.flaticon.com/512/888/888874.png',
