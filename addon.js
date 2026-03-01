@@ -11,9 +11,9 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.2.0',
+    version: '2.3.0',
     name: 'Render Torrent Stream',
-    description: 'Stream movies, series & anime from 15+ sources (1337x, RARBG, TorrentGalaxy, YTS, TPB+, Comet, Nyaa) — 100% buffer-free',
+    description: 'Stream from 15+ massive sources (1337x, RARBG, TorrentGalaxy, YTS, TPB+, Comet, MediaFusion, Jackettio, Gog) — 100% buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
@@ -432,6 +432,8 @@ builder.defineStreamHandler(async ({ type, id }) => {
                         fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
                         fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
                         fetchStremioAddon('MediaFusion', 'https://mediafusion.elfhosted.com/indexers=torrentio', 'movie', id),
+                        fetchStremioAddon('Gog', 'https://gog.elfhosted.com/indexers=torrentio', 'movie', id),
+                        fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'movie', id),
                     ];
 
                     const extra = await Promise.allSettled([
@@ -453,6 +455,8 @@ builder.defineStreamHandler(async ({ type, id }) => {
                             fetchTorrentio('movie', id),
                             fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
                             fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
+                            fetchStremioAddon('Gog', 'https://gog.elfhosted.com/indexers=torrentio', 'movie', id),
+                            fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'movie', id),
                         ];
                         const extra = await Promise.allSettled([
                             tpbMovieSearch(meta.name, meta.year),
@@ -482,13 +486,14 @@ builder.defineStreamHandler(async ({ type, id }) => {
             const meta = await getMeta(imdbId, 'series');
             const showName = meta?.name;
 
-            // Query ALL series sources in parallel for maximum speed
             const sources = await Promise.allSettled([
                 eztvSearch(imdbId, season, episode),
                 fetchTorrentio('series', id),
                 fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'series', id),
                 fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'series', id),
                 fetchStremioAddon('MediaFusion', 'https://mediafusion.elfhosted.com/indexers=torrentio', 'series', id),
+                fetchStremioAddon('Gog', 'https://gog.elfhosted.com/indexers=torrentio', 'series', id),
+                fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'series', id),
                 showName ? tpbSeriesSearch(showName, season, episode) : Promise.resolve([]),
                 showName ? tpbHDSeriesSearch(showName, season, episode) : Promise.resolve([]),
             ]);
