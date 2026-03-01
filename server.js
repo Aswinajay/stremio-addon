@@ -135,10 +135,11 @@ function getOrCreateEngine(infoHash) {
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
-        connections: 100,
-        uploads: 0,
-        verify: true,
-        dht: true,
+        connections: 200,           // More connections to find fast peers
+        uploads: 0,                 // Do not upload to save bandwidth/CPU
+        verify: false,              // Skip piece hash verification to save massive CPU 
+        dht: true,                  // Use DHT
+        tracker: true               // Use trackers
     });
 
     const entry = {
@@ -224,11 +225,14 @@ function serveVideoFile(file, req, res, infoHash) {
 
         console.log(`[Stream] Range: ${start}-${end}/${totalSize} (${(chunkSize / 1024 / 1024).toFixed(1)} MB)`);
 
+        // Add connection keep-alive and disable cache to prevent buffering/drops
         res.writeHead(206, {
             'Content-Range': `bytes ${start}-${end}/${totalSize}`,
             'Accept-Ranges': 'bytes',
             'Content-Length': chunkSize,
             'Content-Type': contentType,
+            'Connection': 'keep-alive',
+            'Cache-Control': 'no-store',
         });
 
         const stream = file.createReadStream({ start, end });
@@ -240,10 +244,13 @@ function serveVideoFile(file, req, res, infoHash) {
     } else {
         console.log(`[Stream] Full file: ${(totalSize / 1024 / 1024).toFixed(1)} MB`);
 
+        // Add connection keep-alive and disable cache to prevent buffering/drops
         res.writeHead(200, {
             'Content-Length': totalSize,
             'Content-Type': contentType,
             'Accept-Ranges': 'bytes',
+            'Connection': 'keep-alive',
+            'Cache-Control': 'no-store',
         });
 
         const stream = file.createReadStream();
