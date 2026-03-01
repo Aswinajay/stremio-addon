@@ -519,7 +519,17 @@ function buildStreams(torrents, baseUrl) {
         return (b.seeds || 0) - (a.seeds || 0);
     });
 
-    for (const t of torrents) {
+    // Speed Boost: Filter out zero-seed & CAM/TS torrents, cap at 20 best results
+    const filtered = torrents.filter(t => {
+        if ((t.seeds || 0) < 1) return false; // No seeders = will never download
+        const q = (t.quality || parseQuality(t.title)).toUpperCase();
+        if (q === 'CAM' || q === 'TS' || q === 'TELESYNC') return false; // Skip garbage
+        return true;
+    });
+
+    const topTorrents = filtered.slice(0, 20); // Only top 20 sorted results
+
+    for (const t of topTorrents) {
         if (!t.hash || seen.has(t.hash)) continue;
         seen.add(t.hash);
 

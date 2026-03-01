@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.1.0',
+        version: '3.2.0',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
@@ -50,7 +50,7 @@ app.get('/debug', async (_req, res) => {
     } catch (err) {
         results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-    res.json({ version: '3.1.0', results });
+    res.json({ version: '3.2.0', results });
 });
 
 // ─── Dashboard ───────────────────────────────────────────
@@ -396,6 +396,25 @@ function getOrCreateEngine(infoHash) {
     engine.on('ready', () => {
         entry.isReady = true;
         console.log(`[Engine] Ready: ${infoHash.substring(0, 8)}… (${engine.files.length} files)`);
+
+        // ── Speed Boost: Priority Download ───────────────────
+        // Deselect everything first (stops downloading subtitles, nfo, etc.)
+        engine.files.forEach(f => f.deselect());
+
+        // Find the largest video file and prioritize it for sequential streaming
+        let bestFile = null;
+        let bestSize = 0;
+        for (const f of engine.files) {
+            const ext = f.name.split('.').pop().toLowerCase();
+            if (['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.webm', '.m4v'].some(e => f.name.toLowerCase().endsWith(e)) && f.length > bestSize) {
+                bestFile = f;
+                bestSize = f.length;
+            }
+        }
+        if (bestFile) {
+            bestFile.select(); // Tell the engine: stream this file sequentially from piece 0
+            console.log(`[Engine] Priority → "${bestFile.name}" (${(bestFile.length / 1024 / 1024).toFixed(0)} MB)`);
+        }
     });
 
     activeEngines[infoHash] = entry;
@@ -477,7 +496,7 @@ function serveVideoFile(file, req, res, infoHash) {
             'Cache-Control': 'no-store',
         });
 
-        const stream = file.createReadStream({ start, end });
+        const stream = file.createReadStream({ start, end, highWaterMark: 4 * 1024 * 1024 });
         stream.pipe(res);
         stream.on('error', (err) => {
             console.error(`[Stream Error] ${infoHash.substring(0, 8)} Read error: ${err.message}`);
@@ -498,7 +517,7 @@ function serveVideoFile(file, req, res, infoHash) {
             'Cache-Control': 'no-store',
         });
 
-        const stream = file.createReadStream();
+        const stream = file.createReadStream({ highWaterMark: 4 * 1024 * 1024 });
         stream.pipe(res);
         stream.on('error', (err) => {
             console.error(`[Stream Error] ${infoHash.substring(0, 8)} Read error: ${err.message}`);
