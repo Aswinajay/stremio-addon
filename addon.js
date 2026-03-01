@@ -17,7 +17,7 @@ const TPB_MIRRORS = [
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.5.1',
+    version: '3.5.2',
     name: 'Render Torrent Stream (Hydra+)',
     description: 'Auto-rotating Scrapers | Multi-Format Series Search | 4K HDR',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -96,7 +96,7 @@ async function ytsImdbLookup(imdbId) {
     for (const mirror of YTS_MIRRORS) {
         try {
             const url = `${mirror}/api/v2/movie_details.json?imdb_id=${imdbId}`;
-            const r = await axios.get(url, axiosOpts);
+            const r = await axios.get(url, getAxiosOpts());
             const movie = r.data?.data?.movie;
             if (movie?.torrents?.length > 0) {
                 console.log(`[YTS-IMDB] ✓ ${movie.torrents.length} torrents`);
@@ -120,7 +120,7 @@ async function ytsImdbLookup(imdbId) {
 async function ytsSearch(title, year) {
     try {
         const url = `${YTS_MIRRORS[0]}/api/v2/list_movies.json?query_term=${encodeURIComponent(title)}&limit=10&sort_by=seeds`;
-        const r = await axios.get(url, axiosOpts);
+        const r = await axios.get(url, getAxiosOpts());
         const movies = r.data?.data?.movies;
         if (!movies?.length) return [];
 
@@ -153,7 +153,7 @@ async function tpbMovieSearch(title, year) {
         try {
             const isApi = mirror.type === 'api';
             const url = isApi ? `${mirror.url}/q.php?q=${encodeURIComponent(q)}&cat=201,207` : `${mirror.url}/search/${encodeURIComponent(q)}/1/99/201,207`;
-            const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+            const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
 
             if (isApi) {
                 const results = Array.isArray(r.data) ? r.data : [];
@@ -220,7 +220,7 @@ async function solidTorrentsSearch(q) {
     for (const mirror of mirrors) {
         try {
             const url = `${mirror}/api/v1/search?q=${encodeURIComponent(q)}&category=all`;
-            const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+            const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
             const results = r.data?.results || [];
             if (!results.length) continue;
             console.log(`[SolidTorrents] ✓ ${results.length} results via ${mirror}`);
@@ -242,7 +242,7 @@ async function btDigSearch(q) {
     for (const mirror of mirrors) {
         try {
             const url = `${mirror}/search?q=${encodeURIComponent(q)}&p=0&order=0`;
-            const r = await axios.get(url, { ...axiosOpts, timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000, headers: { ...getAxiosOpts().headers, 'User-Agent': 'Mozilla/5.0' } });
             const html = r.data || '';
             const magnets = html.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{32,40})/gi) || [];
             const hashes = [...new Set(magnets.map(m => m.split('btih:')[1].toLowerCase()))];
@@ -258,7 +258,7 @@ async function btDigSearch(q) {
 async function nyaaRssSearch(q) {
     try {
         const url = `https://nyaa.si/?page=rss&q=${encodeURIComponent(q)}&c=1_0&f=0`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
         const items = r.data.match(/<item>[\s\S]*?<\/item>/g) || [];
         if (!items.length) return [];
 
@@ -277,7 +277,7 @@ async function nyaaRssSearch(q) {
 async function bitsearchSearch(q) {
     try {
         const url = `https://bitsearch.to/search?q=${encodeURIComponent(q)}`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 10000 });
+        const r = await axios.get(url, { ...getAxiosOpts(), timeout: 10000 });
         const html = r.data || '';
 
         // Find magnets in HTML (Base32 or Hex)
@@ -302,7 +302,7 @@ async function tpbImdbLookup(imdbId) {
     for (const mirror of mirrors) {
         try {
             const url = `${mirror}/q.php?q=${imdbId}&cat=0`;
-            const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+            const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
             if (r.status === 403) continue;
             const results = (r.data || []).filter(t =>
                 t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
@@ -339,7 +339,7 @@ async function fetchTorrentio(type, id) {
     for (const baseUrl of baseUrls) {
         try {
             const url = `${baseUrl}/stream/${type}/${id}.json`;
-            const r = await axios.get(url, { ...axiosOpts, timeout: 6000 });
+            const r = await axios.get(url, { ...getAxiosOpts(), timeout: 6000 });
             const streams = r.data?.streams || [];
             if (!streams.length) continue;
 
@@ -377,7 +377,7 @@ async function fetchTorrentio(type, id) {
 async function fetchStremioAddon(sourceName, baseUrl, type, id) {
     try {
         const url = `${baseUrl}/stream/${type}/${id}.json`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
         const streams = r.data?.streams || [];
         if (!streams.length) return [];
 
@@ -418,7 +418,7 @@ async function eztvSearch(imdbId, season, episode) {
     try {
         const cleanId = imdbId.replace(/^tt/, '');
         const url = `${EZTV_BASE}/api/get-torrents?imdb_id=${cleanId}&limit=100`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
         const all = r.data?.torrents || [];
         const filtered = all.filter(t =>
             String(t.season) === String(season) && String(t.episode) === String(episode)
@@ -443,7 +443,7 @@ async function tpbSeriesSearch(showName, season, episode) {
         const e = String(episode).padStart(2, '0');
         const q = `${showName} S${s}E${e}`;
         const url = `${TPB_API}/q.php?q=${encodeURIComponent(q)}&cat=0`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
         const results = (r.data || []).filter(t =>
             t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
             t.name !== 'No results returned'
@@ -469,7 +469,7 @@ async function tpbHDSeriesSearch(showName, season, episode) {
         const e = String(episode).padStart(2, '0');
         const q = `${showName} S${s}E${e}`;
         const url = `${TPB_API}/q.php?q=${encodeURIComponent(q)}&cat=208`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
         const results = (r.data || []).filter(t =>
             t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
             t.name !== 'No results returned'
