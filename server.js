@@ -105,6 +105,7 @@ function destroyEngine(infoHash) {
     if (!entry) return;
 
     clearTimeout(entry.timeout);
+    if (entry.logInterval) clearInterval(entry.logInterval);
     try {
         entry.engine.destroy();
     } catch (e) {
@@ -146,6 +147,19 @@ function getOrCreateEngine(infoHash) {
         lastAccess: Date.now(),
         timeout: setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT),
     };
+
+    // Log speed every 5 seconds
+    entry.logInterval = setInterval(() => {
+        if (!engine.swarm) return;
+        const speed = (engine.swarm.downloadSpeed() / 1024 / 1024).toFixed(2);
+        const peers = engine.swarm.wires.length;
+        const downloaded = (engine.swarm.downloaded / 1024 / 1024).toFixed(2);
+
+        // Only log if it's actually doing something
+        if (speed > 0 || peers > 0) {
+            console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speed} MB/s | 👥 ${peers} peers | 💾 ${downloaded} MB`);
+        }
+    }, 5000);
 
     // Mark ready when the engine fires 'ready'
     engine.on('ready', () => {
