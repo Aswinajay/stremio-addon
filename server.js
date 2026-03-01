@@ -187,7 +187,7 @@ function getOrCreateEngine(infoHash) {
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
-        connections: 200,           // More connections to find fast peers
+        connections: 110,           // Optimal connections to find fast peers without exhausting Render's CPU limit
         uploads: 0,                 // Do not upload to save bandwidth/CPU
         verify: false,              // Skip piece hash verification to save massive CPU 
         dht: true,                  // Use DHT
@@ -290,8 +290,11 @@ function serveVideoFile(file, req, res, infoHash) {
         const stream = file.createReadStream({ start, end });
         stream.pipe(res);
         stream.on('error', (err) => {
-            console.error(`[Stream] Read error: ${err.message}`);
+            console.error(`[Stream Error] ${infoHash.substring(0, 8)} Read error: ${err.message}`);
             if (!res.headersSent) res.status(500).end();
+        });
+        res.on('close', () => {
+            stream.destroy();
         });
     } else {
         console.log(`[Stream] Full file: ${(totalSize / 1024 / 1024).toFixed(1)} MB`);
@@ -308,8 +311,11 @@ function serveVideoFile(file, req, res, infoHash) {
         const stream = file.createReadStream();
         stream.pipe(res);
         stream.on('error', (err) => {
-            console.error(`[Stream] Read error: ${err.message}`);
+            console.error(`[Stream Error] ${infoHash.substring(0, 8)} Read error: ${err.message}`);
             if (!res.headersSent) res.status(500).end();
+        });
+        res.on('close', () => {
+            stream.destroy();
         });
     }
 }
