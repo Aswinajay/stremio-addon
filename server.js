@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.19',
+        version: '3.5.20',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
@@ -68,6 +68,7 @@ app.get('/dashboard', (req, res) => {
         files: entry.engine.files?.length || 0
     }));
 
+    const limits = getDynamicLimits();
     res.send(`
     <!DOCTYPE html>
     <html>
@@ -78,14 +79,15 @@ app.get('/dashboard', (req, res) => {
             .card { background: #1e1e1e; padding: 20px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #333; }
             .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
             .stat { color: #8b5cf6; font-weight: bold; }
-            h1 { color: #8b5cf6; }
+            h1 { color: #8b5cf6; margin-bottom: 5px; }
+            .mode-badge { display: inline-block; padding: 4px 10px; border-radius: 5px; font-size: 0.8rem; font-weight: bold; margin-left: 10px; background: #8b5cf6; color: #fff; vertical-align: middle; }
             .refresh { font-size: 0.8rem; color: #666; margin-bottom: 20px; }
         </style>
         <meta http-equiv="refresh" content="5">
     </head>
     <body>
-        <h1>📊 Live Stream Monitor</h1>
-        <div class="refresh">Auto-refreshing every 5 seconds. Active Engines: ${engines.length} / ${MAX_ENGINES}</div>
+        <h1>📊 Live Stream Monitor <span class="mode-badge">${limits.mode} MODE</span></h1>
+        <div class="refresh">Auto-refreshing every 5 seconds. Active Engines: ${engines.length} / Unlimited (RAM Limit: ${RAM_LIMIT_MB}MB)</div>
         <div class="grid">
             ${engines.length ? engines.map(e => `
                 <div class="card">
