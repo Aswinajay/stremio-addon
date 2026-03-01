@@ -1,2 +1,13 @@
 const { addonInterface } = require('./addon');
-addonInterface.streams.request({type: 'movie', id: 'tt0111161'}).then(console.log).catch(console.error);
+
+async function test() {
+    try {
+        const req = { type: 'movie', id: 'tt0111161' };
+        console.log("Requesting:", req);
+        const result = await addonInterface.request('stream', req);
+        console.log("Result:", JSON.stringify(result, null, 2));
+    } catch (e) {
+        console.error("Failed:", e);
+    }
+}
+test();
