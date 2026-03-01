@@ -79,30 +79,31 @@ const axiosOpts = {
     },
 };
 
-// ─── Get show name from Cinemeta ─────────────────────────
+// ─── Get title from Cinemeta (works for movies & series) ─
 const nameCache = {};
-async function getShowName(imdbId) {
+async function getTitle(imdbId, type = 'movie') {
     if (nameCache[imdbId]) return nameCache[imdbId];
     try {
-        const url = `https://v3-cinemeta.strem.io/meta/series/${imdbId}.json`;
+        const url = `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`;
         const r = await axios.get(url, { timeout: 10000 });
-        const name = r.data?.meta?.name;
-        if (name) {
-            nameCache[imdbId] = name;
-            return name;
+        const meta = r.data?.meta;
+        if (meta?.name) {
+            const result = { name: meta.name, year: meta.year || meta.releaseInfo };
+            nameCache[imdbId] = result;
+            return result;
         }
     } catch (err) {
-        console.error(`[Cinemeta] Failed: ${err.message}`);
+        console.error(`[Cinemeta] Failed for ${imdbId}: ${err.message}`);
     }
     return null;
 }
 
-// ─── YTS: Movies ─────────────────────────────────────────
+// ─── YTS: Movies (IMDB lookup) ───────────────────────────
 async function fetchMovieTorrents(imdbId) {
     for (const mirror of YTS_MIRRORS) {
         try {
             const url = `${mirror}/api/v2/movie_details.json?imdb_id=${imdbId}`;
-            console.log(`[YTS] Trying: ${url}`);
+            console.log(`[YTS] IMDB lookup: ${url}`);
 
             const response = await axios.get(url, axiosOpts);
             const movie = response.data?.data?.movie;
@@ -111,7 +112,7 @@ async function fetchMovieTorrents(imdbId) {
                 continue;
             }
 
-            console.log(`[YTS] Got ${movie.torrents.length} torrents`);
+            console.log(`[YTS] Got ${movie.torrents.length} torrents via IMDB`);
             return {
                 title: movie.title_long || movie.title,
                 torrents: movie.torrents,
@@ -121,6 +122,43 @@ async function fetchMovieTorrents(imdbId) {
         }
     }
     return null;
+}
+
+// ─── YTS: Title search fallback ──────────────────────────
+async function fetchMovieByTitle(title, year) {
+    const mirror = YTS_MIRRORS[0];
+    try {
+        let url = `${mirror}/api/v2/list_movies.json?query_term=${encodeURIComponent(title)}&limit=5`;
+        console.log(`[YTS] Title search: "${title}"`);
+
+        const response = await axios.get(url, axiosOpts);
+        const movies = response.data?.data?.movies;
+
+        if (!movies || movies.length === 0) {
+            console.log(`[YTS] No results for title search`);
+            return null;
+        }
+
+        // Find best match (prefer year match if available)
+        let best = movies[0];
+        if (year) {
+            const yearMatch = movies.find(m => String(m.year) === String(year));
+            if (yearMatch) best = yearMatch;
+        }
+
+        if (!best.torrents || best.torrents.length === 0) {
+            return null;
+        }
+
+        console.log(`[YTS] Title search found: "${best.title_long}" (${best.torrents.length} torrents)`);
+        return {
+            title: best.title_long || best.title,
+            torrents: best.torrents,
+        };
+    } catch (err) {
+        console.error(`[YTS] Title search failed: ${err.message}`);
+        return null;
+    }
 }
 
 // ─── EZTV: Series (first try) ────────────────────────────
@@ -232,9 +270,19 @@ builder.defineStreamHandler(async ({ type, id }) => {
 
     try {
         if (type === 'movie') {
-            const result = await fetchMovieTorrents(id);
+            // Try IMDB lookup first
+            let result = await fetchMovieTorrents(id);
+
+            // If IMDB lookup fails, try title search via Cinemeta
             if (!result || result.torrents.length === 0) {
-                console.log('[Stream] No movie torrents found');
+                const meta = await getTitle(id, 'movie');
+                if (meta?.name) {
+                    result = await fetchMovieByTitle(meta.name, meta.year);
+                }
+            }
+
+            if (!result || result.torrents.length === 0) {
+                console.log('[Stream] No movie torrents found via IMDB or title search');
                 return { streams: [] };
             }
 
@@ -282,9 +330,9 @@ builder.defineStreamHandler(async ({ type, id }) => {
 
             // If EZTV fails, use TPB API (cloud-friendly!)
             if (torrents.length === 0) {
-                const showName = await getShowName(imdbId);
-                if (showName) {
-                    torrents = await fetchSeriesFromTPB(showName, season, episode);
+                const meta = await getTitle(imdbId, 'series');
+                if (meta?.name) {
+                    torrents = await fetchSeriesFromTPB(meta.name, season, episode);
                 } else {
                     console.log(`[Stream] Could not determine show name for ${imdbId}`);
                 }
