@@ -17,7 +17,7 @@ const TPB_MIRRORS = [
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.5.13',
+    version: '3.5.15',
     name: 'Render Torrent Stream (Hydra+)',
     description: 'Auto-rotating Scrapers | Multi-Format Series Search | 4K HDR',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -63,7 +63,8 @@ const USER_AGENTS = [
 
 function getAxiosOpts() {
     return {
-        timeout: 12000,
+        timeout: 10000,
+        maxContentLength: 5 * 1024 * 1024, // 5MB Limit per request to prevent RAM spikes
         headers: {
             'User-Agent': USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)],
             'Accept': 'application/json, text/html',
@@ -517,18 +518,12 @@ builder.defineStreamHandler(async ({ type, id }) => {
                 ytsResults,
                 torrentioResults,
                 tpbPlusResults,
-                cometResults,
-                mediaFusionResults,
-                jackettioResults,
                 tpbImdbResults,
             ] = await Promise.all([
                 getMeta(id, 'movie').catch(() => null),
                 ytsImdbLookup(id).catch(() => []),
                 fetchTorrentio('movie', id).catch(() => []),
                 fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id).catch(() => []),
-                fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id).catch(() => []),
-                fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'movie', id).catch(() => []),
-                fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'movie', id).catch(() => []),
                 tpbImdbLookup(id).catch(() => []),
             ]);
 
@@ -536,11 +531,18 @@ builder.defineStreamHandler(async ({ type, id }) => {
                 ...ytsResults,
                 ...torrentioResults,
                 ...tpbPlusResults,
-                ...cometResults,
-                ...mediaFusionResults,
-                ...jackettioResults,
                 ...tpbImdbResults,
             ];
+
+            // Reduced Wave 1.5 (More stable sources)
+            const backupResults = await Promise.all([
+                fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id).catch(() => []),
+                fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'movie', id).catch(() => []),
+            ]);
+            for (const r of backupResults) allTorrents.push(...r);
+
+            // Small 100ms pause to let GC breathe before Title Wave
+            await new Promise(resolve => setTimeout(resolve, 100));
 
             // Title-based searches (needs metadata, run in second parallel wave)
             if (meta?.name) {
@@ -579,27 +581,39 @@ builder.defineStreamHandler(async ({ type, id }) => {
             const sShort = season.replace(/^0/, '');
             const eShort = episode.replace(/^0/, '');
 
-            const sources = await Promise.allSettled([
+            const sources1 = await Promise.allSettled([
                 eztvSearch(imdbId, season, episode),
                 fetchTorrentio('series', id),
                 fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'series', id),
-                fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'series', id),
                 tpbImdbLookup(imdbId),
-                // Parallel title format searching
+            ]);
+
+            const allTorrents = [];
+            for (const s of sources1) {
+                if (s.status === 'fulfilled' && s.value.length > 0) allTorrents.push(...s.value);
+            }
+
+            // Wave 1.5 + Small pause
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const sources2 = await Promise.allSettled([
+                fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'series', id),
                 solidTorrentsSearch(`${showName} S${sHex}E${eHex}`),
-                solidTorrentsSearch(`${showName} ${sShort}x${eHex}`), // 1x01 format
-                solidTorrentsSearch(`${showName} S${sShort}E${eShort}`), // S1E1 format
+                solidTorrentsSearch(`${showName} ${sShort}x${eHex}`),
+            ]);
+            for (const s of sources2) {
+                if (s.status === 'fulfilled' && s.value.length > 0) allTorrents.push(...s.value);
+            }
+
+            // Final Wave (Titles)
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const sources3 = await Promise.allSettled([
                 btDigSearch(`${showName} S${sHex}E${eHex}`),
                 bitsearchSearch(`${showName} S${sHex}E${eHex}`),
                 nyaaRssSearch(showName),
                 showName ? tpbSearch(`${showName} S${sHex}E${eHex}`, '208') : Promise.resolve([]),
             ]);
-
-            const allTorrents = [];
-            for (const s of sources) {
-                if (s.status === 'fulfilled' && s.value.length > 0) {
-                    allTorrents.push(...s.value);
-                }
+            for (const s of sources3) {
+                if (s.status === 'fulfilled' && s.value.length > 0) allTorrents.push(...s.value);
             }
 
             if (allTorrents.length === 0) {
