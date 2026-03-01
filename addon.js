@@ -17,9 +17,9 @@ const TPB_MIRRORS = [
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.5.0',
-    name: 'Render Torrent Stream (Hydra)',
-    description: 'Auto-scrapes HTML Proxies + JSON APIs | Multi-Format Series Search | 4K HDR',
+    version: '3.5.1',
+    name: 'Render Torrent Stream (Hydra+)',
+    description: 'Auto-rotating Scrapers | Multi-Format Series Search | 4K HDR',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
@@ -54,13 +54,22 @@ function parseQuality(title) {
     return m ? m[1].toUpperCase() : '?';
 }
 
-const axiosOpts = {
-    timeout: 12000,
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-    },
-};
+const USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0'
+];
+
+function getAxiosOpts() {
+    return {
+        timeout: 12000,
+        headers: {
+            'User-Agent': USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)],
+            'Accept': 'application/json, text/html',
+        }
+    };
+}
 
 // ─── Cinemeta: get title metadata ────────────────────────
 const metaCache = {};
@@ -175,30 +184,32 @@ async function tpbMovieSearch(title, year) {
     return [];
 }
 
-// 4. TPB HD Movie Search (Mirror Rotation)
-async function tpbHDMovieSearch(title, year) {
-    const mirrors = [TPB_API, 'https://tpbay.win', 'https://tpb.party', 'https://pirateproxy.live'];
-    const q = year ? `${title} ${year}` : title;
-    for (const mirror of mirrors) {
+// 4. EZTV Search (Mirror Rotation)
+async function eztvSearch(imdbId, s, e) {
+    if (!imdbId) return [];
+    const id = imdbId.replace('tt', '');
+    for (const mirror of EZTV_MIRRORS) {
         try {
-            const url = `${mirror}/q.php?q=${encodeURIComponent(q)}&cat=207`;
-            const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
-            if (r.status === 403) continue;
-            const results = (r.data || []).filter(t =>
-                t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
-                t.name !== 'No results returned'
+            const url = `${mirror}/api/get-torrents?imdb_id=${id}`;
+            const r = await axios.get(url, getAxiosOpts());
+            const torrents = r.data?.torrents || [];
+            if (!torrents.length) continue;
+
+            const filtered = torrents.filter(t =>
+                String(t.season) === String(parseInt(s)) &&
+                String(t.episode) === String(parseInt(e))
             );
-            if (!results.length) continue;
-            results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
-            console.log(`[TPB-HD] ✓ ${results.length} results via ${mirror}`);
-            return results.slice(0, 10).map(r => ({
-                hash: r.info_hash?.toLowerCase(),
-                title: r.name,
-                size: formatSize(r.size),
-                seeds: parseInt(r.seeders) || 0,
-                source: 'TPB-HD',
+            if (!filtered.length) continue;
+
+            console.log(`[EZTV] ✓ ${filtered.length} results via ${mirror}`);
+            return filtered.map(t => ({
+                hash: t.hash?.toLowerCase(),
+                title: t.title,
+                size: t.size,
+                seeds: t.seeds || 0,
+                source: 'EZTV',
             })).filter(t => t.hash);
-        } catch (e) { continue; }
+        } catch (err) { continue; }
     }
     return [];
 }
