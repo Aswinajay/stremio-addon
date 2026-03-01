@@ -11,9 +11,9 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.3.0',
+    version: '2.4.0',
     name: 'Render Torrent Stream',
-    description: 'Stream from 15+ massive sources (1337x, RARBG, TorrentGalaxy, YTS, TPB+, Comet, MediaFusion, Jackettio, Gog) — 100% buffer-free',
+    description: 'Stream from 20+ massive sources (1337x, YTS, Indian: TamilBlasters, TamilMV, Hindi movies, TPB, EZTV) — 100% buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
@@ -177,6 +177,28 @@ async function tpbHDMovieSearch(title, year) {
             source: 'TPB-HD',
         })).filter(t => t.hash);
     } catch (e) { console.error(`[TPB-HD] ${e.message}`); return []; }
+}
+
+// 4.5 TPB IMDB Lookup (Powerful for Indian & Niche content)
+async function tpbImdbLookup(imdbId) {
+    try {
+        const url = `${TPB_API}/q.php?q=${imdbId}&cat=0`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const results = (r.data || []).filter(t =>
+            t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
+            t.name !== 'No results returned'
+        );
+        if (!results.length) return [];
+
+        console.log(`[TPB-IMDB] ✓ ${results.length} results found for ${imdbId}`);
+        return results.map(r => ({
+            hash: r.info_hash?.toLowerCase(),
+            title: r.name,
+            size: formatSize(r.size),
+            seeds: parseInt(r.seeders) || 0,
+            source: 'TPB-Direct',
+        })).filter(t => t.hash);
+    } catch (e) { console.error(`[TPB-IMDB] ${e.message}`); return []; }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -431,14 +453,13 @@ builder.defineStreamHandler(async ({ type, id }) => {
                         fetchTorrentio('movie', id),
                         fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
                         fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
-                        fetchStremioAddon('MediaFusion', 'https://mediafusion.elfhosted.com/indexers=torrentio', 'movie', id),
-                        fetchStremioAddon('Gog', 'https://gog.elfhosted.com/indexers=torrentio', 'movie', id),
+                        fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'movie', id),
                         fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'movie', id),
                     ];
 
                     const extra = await Promise.allSettled([
-                        tpbMovieSearch(meta.name, meta.year),
-                        tpbHDMovieSearch(meta.name, meta.year),
+                        tpbImdbLookup(id), // Dedicated IMDB lookup for better hits
+                        tpbMovieSearch(meta?.name, meta?.year),
                         ...metaScrapers
                     ]);
 
@@ -490,10 +511,9 @@ builder.defineStreamHandler(async ({ type, id }) => {
                 eztvSearch(imdbId, season, episode),
                 fetchTorrentio('series', id),
                 fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'series', id),
-                fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'series', id),
-                fetchStremioAddon('MediaFusion', 'https://mediafusion.elfhosted.com/indexers=torrentio', 'series', id),
-                fetchStremioAddon('Gog', 'https://gog.elfhosted.com/indexers=torrentio', 'series', id),
+                fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'series', id),
                 fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'series', id),
+                tpbImdbLookup(imdbId), // Series IMDB lookup support
                 showName ? tpbSeriesSearch(showName, season, episode) : Promise.resolve([]),
                 showName ? tpbHDSeriesSearch(showName, season, episode) : Promise.resolve([]),
             ]);
