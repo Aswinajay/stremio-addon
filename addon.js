@@ -11,7 +11,7 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.9.0',
+    version: '2.9.1',
     name: 'Render Torrent Stream',
     description: 'Stream from 30+ massive sources (4K/1080p Prioritized) — 100% buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -491,16 +491,16 @@ function buildStreams(torrents, baseUrl) {
         seen.add(t.hash);
 
         const quality = t.quality || parseQuality(t.title);
-        let info = quality;
-        if (t.codec) info += ` ${t.codec}`;
-        if (t.audio) info += ` ${t.audio}ch`;
-        if (t.size) info += ` | ${t.size}`;
-        info += ` | 👤 ${t.seeds}`;
+        let info = '';
+        if (t.codec) info += `${t.codec}`;
+        if (t.audio) info += info ? ` ${t.audio}ch` : `${t.audio}ch`;
+        if (t.size) info += info ? ` | ${t.size}` : `${t.size}`;
+        info += info ? ` | 👤 ${t.seeds}` : `👤 ${t.seeds}`;
 
-        // Render Proxy (HTTP stream)
+        // Lead with Resolution (Quality) 🖥️
         streams.push({
             url: `${baseUrl}/stream/${t.hash}`,
-            title: `🖥️ Render Proxy | ${info}\n${t.title} | ${t.source}`,
+            title: `🖥️ ${quality} | ${info}\n${t.title} | ${t.source}`,
             behaviorHints: {
                 bingeGroup: `render-proxy-${quality}`,
                 notWebReady: true,

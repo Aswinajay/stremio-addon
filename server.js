@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '2.9.0',
+        version: '2.9.1',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
@@ -50,7 +50,7 @@ app.get('/debug', async (_req, res) => {
     } catch (err) {
         results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-    res.json({ version: '2.9.0', results });
+    res.json({ version: '2.9.1', results });
 });
 
 // ─── Dashboard ───────────────────────────────────────────
