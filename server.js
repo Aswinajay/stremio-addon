@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.12',
+        version: '3.5.13',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
@@ -212,11 +212,11 @@ const addonRouter = getRouter(addonInterface);
 app.use(addonRouter);
 
 // ─── Torrent Engine Management ───────────────────────────
-const MAX_ENGINES = 6;           // Soft cap — RAM check enforces the real limit
-const RAM_LIMIT_MB = 400;        // Evict idle engines above this heap usage
-const ENGINE_TIMEOUT = 10 * 60 * 1000;
-const CONNECT_TIMEOUT = 120000;
-const ZOMBIE_TIMEOUT = 3 * 60 * 1000;
+const MAX_ENGINES = 4;           // Harder cap for Render 512MB
+const RAM_LIMIT_MB = 300;        // Start evicting early to prevent OOM
+const ENGINE_TIMEOUT = 5 * 60 * 1000;
+const CONNECT_TIMEOUT = 90000;
+const ZOMBIE_TIMEOUT = 2 * 60 * 1000;
 const activeEngines = {};
 
 function getRamUsageMB() {
@@ -423,7 +423,7 @@ function getOrCreateEngine(infoHash) {
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
-        connections: 50,           // Nitro Push: More connections to find Premium High-Speed seeders
+        connections: 40,           // Lowered from 50 to save 20% networking RAM
         uploads: 0,                 // Do not upload to save bandwidth/CPU
         verify: false,              // skip piece hash verification to save massive CPU 
         dht: true,                  // Use DHT
