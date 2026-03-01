@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '2.6.0',
+        version: '2.7.0',
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
         uptime: process.uptime(),
@@ -49,7 +49,7 @@ app.get('/debug', async (_req, res) => {
     } catch (err) {
         results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-    res.json({ version: '2.6.0', results });
+    res.json({ version: '2.7.0', results });
 });
 
 // ─── Landing Page ────────────────────────────────────────
@@ -142,8 +142,8 @@ app.get('/', (req, res) => {
             
             <div class="features">
                 <div class="feature">⚡ Cloud Proxy</div>
-                <div class="feature">🎬 30+ Absolute Massive Sources</div>
-                <div class="feature">📺 Torrentio & Nyaa RSS</div>
+                <div class="feature">🎬 30+ Massive Sources</div>
+                <div class="feature">📺 Official Tio & Bitsearch</div>
             </div>
         </div>
     </body>
@@ -157,7 +157,7 @@ app.use(addonRouter);
 
 // ─── Torrent Engine Management ───────────────────────────
 const MAX_ENGINES = 3;
-const ENGINE_TIMEOUT = 5 * 60 * 1000; // 5 min idle
+const ENGINE_TIMEOUT = 10 * 60 * 1000; // 10 min idle
 const CONNECT_TIMEOUT = 60000; // 60s to connect to torrent
 const activeEngines = {};
 
@@ -266,16 +266,18 @@ function destroyEngine(infoHash) {
     console.log(`[Engine] Destroyed: ${infoHash.substring(0, 8)}… (active: ${Object.keys(activeEngines).length})`);
 }
 
+function resetEngineTimeout(infoHash) {
+    const entry = activeEngines[infoHash];
+    if (!entry) return;
+    entry.lastAccess = Date.now();
+    clearTimeout(entry.timeout);
+    entry.timeout = setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT);
+}
+
 function getOrCreateEngine(infoHash) {
     if (activeEngines[infoHash]) {
-        const entry = activeEngines[infoHash];
-        entry.lastAccess = Date.now();
-
-        // Reset idle timeout
-        clearTimeout(entry.timeout);
-        entry.timeout = setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT);
-
-        return { engine: entry.engine, isReady: entry.isReady };
+        resetEngineTimeout(infoHash);
+        return { engine: activeEngines[infoHash].engine, isReady: activeEngines[infoHash].isReady };
     }
 
     // Evict if at capacity
@@ -351,6 +353,7 @@ function findVideoFile(files, fileIdx) {
 
 // ─── Serve video file with Range support ─────────────────
 function serveVideoFile(file, req, res, infoHash) {
+    resetEngineTimeout(infoHash);
     const totalSize = file.length;
 
     const ext = file.name.split('.').pop().toLowerCase();

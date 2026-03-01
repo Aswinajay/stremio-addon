@@ -11,9 +11,9 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.6.0',
+    version: '2.7.0',
     name: 'Render Torrent Stream',
-    description: 'Stream from 30+ absolute massive sources (Torrentio, YTS, Indian: TamilMV/TamilBlasters, Nyaa, EZTV, SolidTorrents, TPB) — 100% buffer-free',
+    description: 'Stream from 30+ massive sources (Official Torrentio, YTS, Indian, SolidTorrents, Nyaa, Bitsearch, TPB) — 100% buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
@@ -214,6 +214,29 @@ async function nyaaRssSearch(q) {
             const seeds = item.match(/<nyaa:seeders>([\s\S]*?)<\/nyaa:seeders>/)?.[1] || '0';
             return { hash, title, size, seeds: parseInt(seeds), source: 'Nyaa' };
         }).filter(t => t.hash);
+    } catch (e) { return []; }
+}
+
+// 4.8 Bitsearch Direct Scraper
+async function bitsearchSearch(q) {
+    try {
+        const url = `https://bitsearch.to/search?q=${encodeURIComponent(q)}`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 10000 });
+        const html = r.data || '';
+
+        // Find magnets in HTML
+        const magnets = html.match(/magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,40}/g) || [];
+        const hashes = magnets.map(m => m.split('btih:')[1].toLowerCase());
+
+        if (!hashes.length) return [];
+        console.log(`[Bitsearch] ✓ ${hashes.length} hashes found for ${q}`);
+
+        return [...new Set(hashes)].slice(0, 10).map(h => ({
+            hash: h,
+            title: `${q} - Bitsearch`,
+            source: 'Bitsearch',
+            seeds: 5, // Estimate
+        }));
     } catch (e) { return []; }
 }
 
@@ -504,7 +527,8 @@ builder.defineStreamHandler(async ({ type, id }) => {
                         tpbImdbLookup(id),
                         tpbMovieSearch(meta?.name, meta?.year),
                         solidTorrentsSearch(meta?.name + ' ' + (meta?.year || '')),
-                        nyaaRssSearch(meta?.name), // Anime search
+                        bitsearchSearch(meta?.name + ' ' + (meta?.year || '')),
+                        nyaaRssSearch(meta?.name),
                         ...metaScrapers
                     ]);
 
