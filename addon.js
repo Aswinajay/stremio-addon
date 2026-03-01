@@ -7,10 +7,16 @@ const manifest = {
     name: 'Render Torrent Stream',
     description: 'Streams torrents through Render.com servers to avoid local P2P buffering.',
     logo: 'https://cdn-icons-png.flaticon.com/512/888/888874.png',
-    resources: ['stream'],
+    resources: ['stream', 'catalog'],
     types: ['movie'],
     idPrefixes: ['tt'],
-    catalogs: []
+    catalogs: [
+        {
+            type: 'movie',
+            id: 'top',
+            name: 'Render Top Movies'
+        }
+    ]
 };
 
 const builder = new addonBuilder(manifest);
