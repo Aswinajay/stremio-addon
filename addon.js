@@ -196,20 +196,19 @@ async function tpbHDMovieSearch(title, year) {
 // ───  META SOURCES (Torrentio as scraper)
 // ═══════════════════════════════════════════════════════════
 
-// 5. Torrentio Proxy (scrapes 1337x, RARBG, TorrentGalaxy, etc)
+// 5. TorrentsDB Proxy (Torrentio fork, scrapes 1337x, RARBG, etc. No cloudflare block)
 async function fetchTorrentio(type, id) {
     try {
-        // Use allorigins to bypass Torrentio's Cloudflare block on Render datacenter IPs
-        const targetUrl = encodeURIComponent(`https://torrentio.strem.fun/stream/${type}/${id}.json`);
-        const url = `https://api.allorigins.win/raw?url=${targetUrl}`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 10000 });
+        // Use TorrentsDB directly, it has the same stream catalog as Torrentio but no Cloudflare block
+        const url = `https://torrentsdb.com/stream/${type}/${id}.json`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
         const streams = r.data?.streams || [];
         if (!streams.length) return [];
 
-        console.log(`[Torrentio] ✓ ${streams.length} streams for ${id}`);
+        console.log(`[TorrentsDB] ✓ ${streams.length} streams for ${id}`);
         return streams.map(s => {
             const lines = s.title ? s.title.split('\n') : [];
-            const qualityMatch = s.name?.match(/Torrentio\s+(.+)/i);
+            const qualityMatch = s.name?.match(/(?:Torrentio|TorrentsDB)\s+(.+)/i);
             const quality = qualityMatch ? qualityMatch[1] : '?';
 
             // Extract size and seeds from title if possible
@@ -221,7 +220,7 @@ async function fetchTorrentio(type, id) {
             if (seedsMatch) seeds = parseInt(seedsMatch[1]);
 
             const title = lines.length > 2 ? lines[2].trim() : lines.join(' ');
-            const source = lines.length > 0 ? `Torrentio ${lines[0].trim()}` : 'Torrentio';
+            const source = lines.length > 0 ? `TorrentsDB ${lines[0].trim()}` : 'TorrentsDB';
 
             return {
                 hash: s.infoHash?.toLowerCase(),
@@ -233,7 +232,7 @@ async function fetchTorrentio(type, id) {
             };
         }).filter(t => t.hash);
     } catch (e) {
-        console.error(`[Torrentio Error] ${e.message}`);
+        console.error(`[TorrentsDB Error] ${e.message}`);
         return [];
     }
 }
