@@ -17,7 +17,7 @@ const TPB_MIRRORS = [
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.5.9',
+    version: '3.5.10',
     name: 'Render Torrent Stream (Hydra+)',
     description: 'Auto-rotating Scrapers | Multi-Format Series Search | 4K HDR',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -439,10 +439,36 @@ function getQualityRank(qualityStr) {
 
 function buildStreams(torrents, baseUrl) {
     const streams = [];
-    const seen = new Set();
 
-    // Sort by resolution (highest first), then seeders (most first)
-    torrents.sort((a, b) => {
+    // 1. Group by hash to combine sources & find max seeders
+    const deduplicated = new Map();
+    for (const t of torrents) {
+        if (!t.hash) continue;
+        const hash = t.hash.toLowerCase();
+
+        if (deduplicated.has(hash)) {
+            const existing = deduplicated.get(hash);
+            // Combine source labels (e.g., 'YTS + Tio 1337x')
+            if (!existing.source.includes(t.source)) {
+                existing.source += ` + ${t.source}`;
+            }
+            // Keep the maximum reported seeders
+            existing.seeds = Math.max(existing.seeds || 0, t.seeds || 0);
+
+            // Prefer more descriptive titles
+            if (t.title && t.title.length > (existing.title?.length || 0)) {
+                existing.title = t.title;
+            }
+        } else {
+            // Copy to avoid mutating original
+            deduplicated.set(hash, { ...t, hash });
+        }
+    }
+
+    const uniqueTorrents = Array.from(deduplicated.values());
+
+    // 2. Sort by resolution (highest first), then seeders (most first)
+    uniqueTorrents.sort((a, b) => {
         const qA = a.quality || parseQuality(a.title);
         const qB = b.quality || parseQuality(b.title);
         const rankA = getQualityRank(qA);
@@ -454,19 +480,16 @@ function buildStreams(torrents, baseUrl) {
         return (b.seeds || 0) - (a.seeds || 0);
     });
 
-    // Speed Boost: Filter out zero-seed & CAM/TS torrents, cap at 20 best results
-    const filtered = torrents.filter(t => {
+    // 3. Speed Boost: Filter out zero-seed & CAM/TS torrents
+    const filtered = uniqueTorrents.filter(t => {
         if ((t.seeds || 0) < 1) return false; // No seeders = will never download
         const q = (t.quality || parseQuality(t.title)).toUpperCase();
         if (q === 'CAM' || q === 'TS' || q === 'TELESYNC') return false; // Skip garbage
         return true;
     });
 
-    for (const t of filtered) {
-        if (streams.length >= 60) break; // Cap at 60 UNIQUE streams
-        if (!t.hash || seen.has(t.hash)) continue;
-        seen.add(t.hash);
-
+    // 4. Map top 60 uniquely combined results into final streams
+    for (const t of filtered.slice(0, 60)) {
         const quality = t.quality || parseQuality(t.title);
         let info = '';
         if (t.codec) info += `${t.codec}`;
@@ -549,7 +572,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
             }
 
             const streams = buildStreams(allTorrents, baseUrl);
-            console.log(`[Stream] → ${streams.length} movie streams (${allTorrents.length} unique torrents)`);
+            console.log(`[Stream] → ${streams.length} movie streams (${allTorrents.length} raw hits joined)`);
             return { streams };
 
         } else if (type === 'series') {
@@ -593,7 +616,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
             }
 
             const streams = buildStreams(allTorrents, baseUrl);
-            console.log(`[Stream] → ${streams.length} series streams (${allTorrents.length} unique torrents)`);
+            console.log(`[Stream] → ${streams.length} series streams (${allTorrents.length} raw hits joined)`);
             return { streams };
         }
 
