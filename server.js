@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.4',
+        version: '3.5.6',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
@@ -426,6 +426,7 @@ function getOrCreateEngine(infoHash) {
         isReady: false,
         activeStreams: 0,
         lastAccess: Date.now(),
+        createdAt: Date.now(),
         timeout: setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT),
     };
 
@@ -441,8 +442,8 @@ function getOrCreateEngine(infoHash) {
         const peers = engine.swarm.wires.length;
         const downloaded = (engine.swarm.downloaded / 1024 / 1024).toFixed(2);
 
-        // Track non-zero speed for zombie detection
-        if (parseFloat(speedMb) > 0) {
+        // Track meaningful speed for zombie detection (floor: 0.1 MB/s = meaningful activity)
+        if (parseFloat(speedMb) >= 0.1) {
             entry.lastNonZeroSpeed = Date.now();
         }
 
@@ -480,14 +481,35 @@ function getOrCreateEngine(infoHash) {
     }, 5000);
 
     // Global zombie scan every 90s
+    // Kills engines that have been below 0.1 MB/s for ZOMBIE_TIMEOUT with no active streams
     if (!global._zombieScannerStarted) {
         global._zombieScannerStarted = true;
         setInterval(() => {
             const zombieAge = ZOMBIE_TIMEOUT / 1000;
             for (const [hash, e] of Object.entries(activeEngines)) {
-                if (e.activeStreams === 0 && e.lastNonZeroSpeed && (Date.now() - e.lastNonZeroSpeed > ZOMBIE_TIMEOUT)) {
-                    console.log(`[Zombie] Killing stalled engine ${hash.substring(0, 8)}… (0 MB/s for ${zombieAge}s)`);
+                const timeSinceGoodSpeed = Date.now() - (e.lastNonZeroSpeed || 0);
+                const isStalled = timeSinceGoodSpeed > ZOMBIE_TIMEOUT;
+                const noStreams = e.activeStreams === 0;
+
+                if (noStreams && isStalled) {
+                    const avgSpeed = e.speedSamples?.length
+                        ? e.speedSamples.reduce((a, b) => a + b, 0) / e.speedSamples.length
+                        : 0;
+                    console.log(`[Zombie] Killing slow engine ${hash.substring(0, 8)}… (avg ${avgSpeed.toFixed(2)} MB/s for ${zombieAge}s)`);
                     destroyEngine(hash);
+                } else if (e.activeStreams === 0 && e.speedSamples?.length >= 6) {
+                    // Secondary check: if avg has been below 0.15 MB/s for all 6 samples (30s)
+                    // AND engine is older than 2 minutes, try a DHT re-announce
+                    const avgSpeed = e.speedSamples.reduce((a, b) => a + b, 0) / e.speedSamples.length;
+                    const age = Date.now() - (e.createdAt || Date.now());
+                    if (avgSpeed < 0.15 && age > 120000) {
+                        try {
+                            if (e.engine?.swarm?.announce) {
+                                e.engine.swarm.announce();
+                                console.log(`[SpeedMgr:${hash.substring(0, 8)}] 🔊 Re-announcing (avg ${avgSpeed.toFixed(2)} MB/s)`);
+                            }
+                        } catch (_) { /* ignore */ }
+                    }
                 }
             }
         }, 90 * 1000);
