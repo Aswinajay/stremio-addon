@@ -471,9 +471,11 @@ function getOrCreateEngine(infoHash) {
             }
         }
 
-        // Log if active
+        // Log if active — include RAM so we can monitor memory pressure
         if (parseFloat(speedMb) > 0 || peers > 0) {
-            console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speedMb} MB/s | 👥 ${peers} peers | 💾 ${downloaded} MB | avg:${avgSpeed.toFixed(2)}`);
+            const ramMB = getRamUsageMB();
+            const ramWarn = ramMB > 350 ? ' ⚠️ RAM' : '';
+            console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speedMb} MB/s | 👥 ${peers} peers | 💾 ${downloaded} MB | avg:${avgSpeed.toFixed(2)} | 🧠 ${ramMB}MB${ramWarn}`);
         }
     }, 5000);
 
