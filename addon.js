@@ -11,9 +11,9 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.0.0',
+    version: '2.1.0',
     name: 'Render Torrent Stream',
-    description: 'Stream movies & series from 6+ torrent sources through Render.com — buffer-free proxy streaming',
+    description: 'Stream movies & series from 10+ sources (TorrentsDB, YTS, Comet, TPB+, EZTV) — 100% buffer-free proxy streaming',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
@@ -224,6 +224,42 @@ async function fetchTorrentio(type, id) {
     }
 }
 
+// 6. Generic Stremio Addon Fetcher (Proxy to TPB+, Comet, etc)
+async function fetchStremioAddon(sourceName, baseUrl, type, id) {
+    try {
+        const url = `${baseUrl}/stream/${type}/${id}.json`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const streams = r.data?.streams || [];
+        if (!streams.length) return [];
+
+        console.log(`[${sourceName}] ✓ ${streams.length} streams`);
+        return streams.map(s => {
+            const quality = parseQuality(s.name + ' ' + s.title);
+            let seeds = 0;
+            const seedsMatch = s.title?.match(/👤\s*(\d+)/i) || s.name?.match(/👤\s*(\d+)/i);
+            if (seedsMatch) seeds = parseInt(seedsMatch[1]);
+
+            let size = '';
+            const sizeMatch = s.title?.match(/💾\s*([^👥\n]+)/) || s.name?.match(/💾\s*([^👥\n]+)/);
+            if (sizeMatch) size = sizeMatch[1].trim();
+
+            const title = s.title?.split('\n')[0] || s.name || sourceName;
+
+            return {
+                hash: s.infoHash?.toLowerCase(),
+                title: title,
+                quality: quality,
+                size: size,
+                seeds: seeds,
+                source: sourceName,
+            };
+        }).filter(t => t.hash);
+    } catch (e) {
+        console.error(`[${sourceName} Error] ${e.message}`);
+        return [];
+    }
+}
+
 // ═══════════════════════════════════════════════════════════
 // ───  SERIES SOURCES  ── (3 sources for series)
 // ═══════════════════════════════════════════════════════════
@@ -390,30 +426,34 @@ builder.defineStreamHandler(async ({ type, id }) => {
                     const ytsSearch$ = await ytsSearch(meta.name, meta.year);
                     allTorrents.push(...ytsSearch$);
 
-                    // Source 3+4: TPB movie search (parallel)
-                    const [tpb, tpbHD, torrentio] = await Promise.allSettled([
+                    // Source 3-6: Parallel extra sources
+                    const extra = await Promise.allSettled([
                         tpbMovieSearch(meta.name, meta.year),
                         tpbHDMovieSearch(meta.name, meta.year),
                         fetchTorrentio('movie', id),
+                        fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
+                        fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
                     ]);
-                    if (tpb.status === 'fulfilled') allTorrents.push(...tpb.value);
-                    if (tpbHD.status === 'fulfilled') allTorrents.push(...tpbHD.value);
-                    if (torrentio.status === 'fulfilled') allTorrents.push(...torrentio.value);
+                    extra.forEach(s => {
+                        if (s.status === 'fulfilled') allTorrents.push(...s.value);
+                    });
                 }
             } else {
-                // YTS worked, still try TPB for more options (in parallel, non-blocking)
+                // YTS worked, still try everything else for more options
                 const meta = await getMeta(id, 'movie');
                 if (meta?.name) {
                     try {
-                        const [tpb, tpbHD, torrentio] = await Promise.allSettled([
+                        const extra = await Promise.allSettled([
                             tpbMovieSearch(meta.name, meta.year),
                             tpbHDMovieSearch(meta.name, meta.year),
                             fetchTorrentio('movie', id),
+                            fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
+                            fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
                         ]);
-                        if (tpb.status === 'fulfilled') allTorrents.push(...tpb.value);
-                        if (tpbHD.status === 'fulfilled') allTorrents.push(...tpbHD.value);
-                        if (torrentio.status === 'fulfilled') allTorrents.push(...torrentio.value);
-                    } catch (e) { /* ignore extra stream errors */ }
+                        extra.forEach(s => {
+                            if (s.status === 'fulfilled') allTorrents.push(...s.value);
+                        });
+                    } catch (e) { /* ignore */ }
                 }
             }
 
@@ -437,6 +477,8 @@ builder.defineStreamHandler(async ({ type, id }) => {
             const sources = await Promise.allSettled([
                 eztvSearch(imdbId, season, episode),
                 fetchTorrentio('series', id),
+                fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'series', id),
+                fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'series', id),
                 showName ? tpbSeriesSearch(showName, season, episode) : Promise.resolve([]),
                 showName ? tpbHDSeriesSearch(showName, season, episode) : Promise.resolve([]),
             ]);
