@@ -11,7 +11,7 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.8.5',
+    version: '2.8.6',
     name: 'Render Torrent Stream',
     description: 'Stream from 30+ massive sources (Official Torrentio, YTS, Indian, SolidTorrents, Nyaa, Bitsearch, TPB) — 100% buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -131,57 +131,60 @@ async function ytsSearch(title, year) {
     } catch (e) { console.error(`[YTS-Search] ${e.message}`); return []; }
 }
 
-// 3. TPB Movie Search (blocked on some clouds ⚠️)
+// 3. TPB Movie Search (Mirror Rotation)
 async function tpbMovieSearch(title, year) {
-    try {
-        const q = year ? `${title} ${year}` : title;
-        const url = `${TPB_API}/q.php?q=${encodeURIComponent(q)}&cat=201`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
-        const results = (r.data || []).filter(t =>
-            t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
-            t.name !== 'No results returned'
-        );
-        if (!results.length) return [];
-
-        results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
-        console.log(`[TPB-Movie] ✓ ${results.length} results`);
-        return results.slice(0, 10).map(r => ({
-            hash: r.info_hash?.toLowerCase(),
-            title: r.name,
-            size: formatSize(r.size),
-            seeds: parseInt(r.seeders) || 0,
-            source: 'TPB',
-        })).filter(t => t.hash);
-    } catch (e) { console.error(`[TPB-Movie] ${e.message}`); return []; }
+    const mirrors = [TPB_API, 'https://tpbay.win', 'https://tpb.party', 'https://pirateproxy.live'];
+    const q = year ? `${title} ${year}` : title;
+    for (const mirror of mirrors) {
+        try {
+            const url = `${mirror}/q.php?q=${encodeURIComponent(q)}&cat=201`;
+            const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+            if (r.status === 403) continue;
+            const results = (r.data || []).filter(t =>
+                t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
+                t.name !== 'No results returned'
+            );
+            if (!results.length) continue;
+            results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
+            console.log(`[TPB-Movie] ✓ ${results.length} results via ${mirror}`);
+            return results.slice(0, 10).map(r => ({
+                hash: r.info_hash?.toLowerCase(),
+                title: r.name,
+                size: formatSize(r.size),
+                seeds: parseInt(r.seeders) || 0,
+                source: 'TPB',
+            })).filter(t => t.hash);
+        } catch (e) { continue; }
+    }
+    return [];
 }
 
-// 4. TPB HD Movie Search (category 207 for HD)
+// 4. TPB HD Movie Search (Mirror Rotation)
 async function tpbHDMovieSearch(title, year) {
-    try {
-        const q = year ? `${title} ${year}` : title;
-        const url = `${TPB_API}/q.php?q=${encodeURIComponent(q)}&cat=207`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
-        if (r.status === 403) throw new Error('403 Forbidden');
-        const results = (r.data || []).filter(t =>
-            t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
-            t.name !== 'No results returned'
-        );
-        if (!results.length) return [];
-
-        results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
-        console.log(`[TPB-HD] ✓ ${results.length} HD results`);
-        return results.slice(0, 10).map(r => ({
-            hash: r.info_hash?.toLowerCase(),
-            title: r.name,
-            size: formatSize(r.size),
-            seeds: parseInt(r.seeders) || 0,
-            source: 'TPB-HD',
-        })).filter(t => t.hash);
-    } catch (e) {
-        console.error(`[TPB-HD] ${e.message}`);
-        // Fallback to a scraper-based search if API is 403
-        return [];
+    const mirrors = [TPB_API, 'https://tpbay.win', 'https://tpb.party', 'https://pirateproxy.live'];
+    const q = year ? `${title} ${year}` : title;
+    for (const mirror of mirrors) {
+        try {
+            const url = `${mirror}/q.php?q=${encodeURIComponent(q)}&cat=207`;
+            const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+            if (r.status === 403) continue;
+            const results = (r.data || []).filter(t =>
+                t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
+                t.name !== 'No results returned'
+            );
+            if (!results.length) continue;
+            results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
+            console.log(`[TPB-HD] ✓ ${results.length} results via ${mirror}`);
+            return results.slice(0, 10).map(r => ({
+                hash: r.info_hash?.toLowerCase(),
+                title: r.name,
+                size: formatSize(r.size),
+                seeds: parseInt(r.seeders) || 0,
+                source: 'TPB-HD',
+            })).filter(t => t.hash);
+        } catch (e) { continue; }
     }
+    return [];
 }
 
 // 4.6 SolidTorrents API Search (Great for Indian & 4K)
@@ -229,8 +232,8 @@ async function bitsearchSearch(q) {
         const r = await axios.get(url, { ...axiosOpts, timeout: 10000 });
         const html = r.data || '';
 
-        // Find magnets in HTML
-        const magnets = html.match(/magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,40}/g) || [];
+        // Find magnets in HTML (Base32 or Hex)
+        const magnets = html.match(/magnet:\?xt=urn:btih:[a-zA-Z0-9]{32,40}/gi) || [];
         const hashes = magnets.map(m => m.split('btih:')[1].toLowerCase());
 
         if (!hashes.length) return [];

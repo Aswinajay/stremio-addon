@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '2.8.5',
+        version: '2.8.6',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
@@ -50,7 +50,7 @@ app.get('/debug', async (_req, res) => {
     } catch (err) {
         results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-    res.json({ version: '2.8.5', results });
+    res.json({ version: '2.8.6', results });
 });
 
 // ─── Dashboard ───────────────────────────────────────────
@@ -58,6 +58,7 @@ app.get('/dashboard', (req, res) => {
     const engines = Object.entries(activeEngines).map(([hash, entry]) => ({
         id: hash.substring(0, 8),
         ready: entry.isReady,
+        activeStreams: entry.activeStreams || 0,
         speed: (entry.engine.swarm.downloadSpeed() / 1024 / 1024).toFixed(2) + ' MB/s',
         peers: entry.engine.swarm.wires.length,
         downloaded: (entry.engine.swarm.downloaded / 1024 / 1024).toFixed(2) + ' MB',
@@ -88,6 +89,7 @@ app.get('/dashboard', (req, res) => {
                 <div class="card">
                     <div><b>Engine ID:</b> ${e.id}</div>
                     <div><b>Status:</b> ${e.ready ? '✅ Ready' : '⏳ Connecting'}</div>
+                    <div><b>Active Streams:</b> <span class="stat">${e.activeStreams}</span></div>
                     <div><b>Speed:</b> <span class="stat">${e.speed}</span></div>
                     <div><b>Peers:</b> ${e.peers}</div>
                     <div><b>Downloaded:</b> ${e.downloaded}</div>
