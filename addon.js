@@ -17,7 +17,7 @@ const TPB_MIRRORS = [
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.5.8',
+    version: '3.5.9',
     name: 'Render Torrent Stream (Hydra+)',
     description: 'Auto-rotating Scrapers | Multi-Format Series Search | 4K HDR',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -159,7 +159,7 @@ async function tpbSearch(q, category = '201,207,208') {
                 const filtered = results.filter(t => t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000');
                 if (!filtered.length) continue;
                 console.log(`[TPB-API] ✓ ${filtered.length} results via ${mirror.url}`);
-                return filtered.slice(0, 15).map(r => ({
+                return filtered.slice(0, 40).map(r => ({
                     hash: r.info_hash?.toLowerCase(),
                     title: r.name,
                     size: formatSize(r.size),
@@ -171,7 +171,7 @@ async function tpbSearch(q, category = '201,207,208') {
                 const magnets = html.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{32,40})/gi) || [];
                 if (!magnets.length) continue;
                 console.log(`[TPB-HTML] ✓ ${magnets.length} results via ${mirror.url}`);
-                return magnets.slice(0, 10).map(m => ({
+                return magnets.slice(0, 30).map(m => ({
                     hash: m.split('btih:')[1].toLowerCase(),
                     title: q,
                     source: 'TPB-Proxy',
@@ -247,7 +247,7 @@ async function btDigSearch(q) {
             const hashes = [...new Set(magnets.map(m => m.split('btih:')[1].toLowerCase()))];
             if (!hashes.length) continue;
             console.log(`[BTDig] ✓ ${hashes.length} results via ${mirror}`);
-            return hashes.slice(0, 8).map(h => ({ hash: h, title: q, seeds: 1, source: 'BTDig' }));
+            return hashes.slice(0, 25).map(h => ({ hash: h, title: q, seeds: 1, source: 'BTDig' }));
         } catch (e) { continue; }
     }
     return [];
@@ -286,7 +286,7 @@ async function bitsearchSearch(q) {
         if (!hashes.length) return [];
         console.log(`[Bitsearch] ✓ ${hashes.length} hashes found for ${q}`);
 
-        return [...new Set(hashes)].slice(0, 10).map(h => ({
+        return [...new Set(hashes)].slice(0, 25).map(h => ({
             hash: h,
             title: `${q} - Bitsearch`,
             source: 'Bitsearch',
@@ -463,7 +463,7 @@ function buildStreams(torrents, baseUrl) {
     });
 
     for (const t of filtered) {
-        if (streams.length >= 40) break; // Cap at 40 UNIQUE streams
+        if (streams.length >= 60) break; // Cap at 60 UNIQUE streams
         if (!t.hash || seen.has(t.hash)) continue;
         seen.add(t.hash);
 
