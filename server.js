@@ -220,7 +220,7 @@ const ZOMBIE_TIMEOUT = 3 * 60 * 1000;
 const activeEngines = {};
 
 function getRamUsageMB() {
-    return Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+    return Math.round(process.memoryUsage().rss / 1024 / 1024);
 }
 
 function getTrackers() {

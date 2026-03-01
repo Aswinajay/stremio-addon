@@ -6,14 +6,20 @@ const YTS_MIRRORS = [
     'https://yts.torrentbay.st',
     'https://movies-api.accel.li',
 ];
-const EZTV_BASE = 'https://eztvx.to';
-const TPB_API = 'https://apibay.org';
+const EZTV_MIRRORS = ['https://eztvx.to', 'https://eztv.re', 'https://eztv.wf', 'https://eztv.tf', 'https://eztv1.xyz'];
+const TPB_MIRRORS = [
+    { url: 'https://apibay.org', type: 'api' },
+    { url: 'https://pirateproxy.live', type: 'html' },
+    { url: 'https://thepiratebay0.org', type: 'html' },
+    { url: 'https://tpbay.win', type: 'html' },
+    { url: 'https://tpb.party', type: 'html' }
+];
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.4.0',
-    name: 'Render Torrent Stream (v3.4)',
-    description: 'RAM-aware dynamic engines (up to 6) | 80+ trackers | 4K priority | buffer-free',
+    version: '3.5.0',
+    name: 'Render Torrent Stream (Hydra)',
+    description: 'Auto-scrapes HTML Proxies + JSON APIs | Multi-Format Series Search | 4K HDR',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
@@ -131,29 +137,39 @@ async function ytsSearch(title, year) {
     } catch (e) { console.error(`[YTS-Search] ${e.message}`); return []; }
 }
 
-// 3. TPB Movie Search (Mirror Rotation)
+// 3. Hydra Scraper: TPB API + HTML Proxy support
 async function tpbMovieSearch(title, year) {
-    const mirrors = [TPB_API, 'https://tpbay.win', 'https://tpb.party', 'https://pirateproxy.live'];
     const q = year ? `${title} ${year}` : title;
-    for (const mirror of mirrors) {
+    for (const mirror of TPB_MIRRORS) {
         try {
-            const url = `${mirror}/q.php?q=${encodeURIComponent(q)}&cat=201`;
+            const isApi = mirror.type === 'api';
+            const url = isApi ? `${mirror.url}/q.php?q=${encodeURIComponent(q)}&cat=201,207` : `${mirror.url}/search/${encodeURIComponent(q)}/1/99/201,207`;
             const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
-            if (r.status === 403) continue;
-            const results = (r.data || []).filter(t =>
-                t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
-                t.name !== 'No results returned'
-            );
-            if (!results.length) continue;
-            results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
-            console.log(`[TPB-Movie] ✓ ${results.length} results via ${mirror}`);
-            return results.slice(0, 10).map(r => ({
-                hash: r.info_hash?.toLowerCase(),
-                title: r.name,
-                size: formatSize(r.size),
-                seeds: parseInt(r.seeders) || 0,
-                source: 'TPB',
-            })).filter(t => t.hash);
+
+            if (isApi) {
+                const results = Array.isArray(r.data) ? r.data : [];
+                const filtered = results.filter(t => t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000');
+                if (!filtered.length) continue;
+                console.log(`[TPB-API] ✓ ${filtered.length} results via ${mirror.url}`);
+                return filtered.slice(0, 10).map(r => ({
+                    hash: r.info_hash?.toLowerCase(),
+                    title: r.name,
+                    size: formatSize(r.size),
+                    seeds: parseInt(r.seeders) || 0,
+                    source: 'TPB-API',
+                }));
+            } else {
+                const html = r.data || '';
+                const magnets = html.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{32,40})/gi) || [];
+                if (!magnets.length) continue;
+                console.log(`[TPB-HTML] ✓ ${magnets.length} results via ${mirror.url}`);
+                return magnets.slice(0, 10).map(m => ({
+                    hash: m.split('btih:')[1].toLowerCase(),
+                    title: title,
+                    source: 'TPB-Proxy',
+                    seeds: 10
+                }));
+            }
         } catch (e) { continue; }
     }
     return [];
@@ -189,16 +205,11 @@ async function tpbHDMovieSearch(title, year) {
 
 // 4.6 SolidTorrents (Mirror Rotation)
 async function solidTorrentsSearch(q) {
-    const mirrors = [
-        'https://solidtorrents.to',
-        'https://solidtorrents.eu',
-        'https://solidtorrents.net',
-    ];
+    const mirrors = ['https://solidtorrents.to', 'https://solidtorrents.eu', 'https://solidtorrents.net'];
     for (const mirror of mirrors) {
         try {
             const url = `${mirror}/api/v1/search?q=${encodeURIComponent(q)}&category=all`;
             const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
-            if (r.status === 403) continue;
             const results = r.data?.results || [];
             if (!results.length) continue;
             console.log(`[SolidTorrents] ✓ ${results.length} results via ${mirror}`);
@@ -634,18 +645,25 @@ builder.defineStreamHandler(async ({ type, id }) => {
             const meta = await getMeta(imdbId, 'series');
             const showName = meta?.name;
 
+            const sHex = season.padStart(2, '0');
+            const eHex = episode.padStart(2, '0');
+            const sShort = season.replace(/^0/, '');
+            const eShort = episode.replace(/^0/, '');
+
             const sources = await Promise.allSettled([
                 eztvSearch(imdbId, season, episode),
                 fetchTorrentio('series', id),
                 fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'series', id),
                 fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'series', id),
-                fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'series', id),
                 tpbImdbLookup(imdbId),
-                solidTorrentsSearch(showName + ' S' + season.padStart(2, '0')),
-                bitsearchSearch(showName + ' S' + season.padStart(2, '0')),
+                // Parallel title format searching
+                solidTorrentsSearch(`${showName} S${sHex}E${eHex}`),
+                solidTorrentsSearch(`${showName} ${sShort}x${eHex}`), // 1x01 format
+                solidTorrentsSearch(`${showName} S${sShort}E${eShort}`), // S1E1 format
+                btDigSearch(`${showName} S${sHex}E${eHex}`),
+                bitsearchSearch(`${showName} S${sHex}E${eHex}`),
                 nyaaRssSearch(showName),
-                showName ? tpbSeriesSearch(showName, season, episode) : Promise.resolve([]),
-                showName ? tpbHDSeriesSearch(showName, season, episode) : Promise.resolve([]),
+                showName ? tpbMovieSearch(`${showName} S${sHex}E${eHex}`) : Promise.resolve([]),
             ]);
 
             const allTorrents = [];
