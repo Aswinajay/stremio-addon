@@ -1,12 +1,12 @@
-# 🎬 Render Torrent Stream — Stremio Addon (v2.9.1)
+# 🎬 Render Torrent Stream (Nitro) — v3.0.0
 
-Stream movies & TV series from **30+ massive torrent sources** directly into Stremio with **zero buffering**. This addon uses a high-speed cloud proxy to handle the bit-torrent swarm and delivers a clean HTTP stream to your player, perfect for low-end devices.
+Stream movies & TV series from **30+ massive torrent sources** with **Nitro Speed Boost**. This addon provides the fastest possible streaming by spoofing high-end torrent clients and optimizing peer discovery.
 
-## 🌟 New in v2.9.1: Quality-First Update
-- 🏎️ **Resolution-Leading Labels**: Stream list now leads with quality (e.g., `🖥️ 4K | ...`) for instant visibility.
-- 🥇 **Ultra-Priority Sorting**: 4K (2160p) and 1080p results are strictly pinned to the top of your list.
-- 📊 **Live Monitor Dashboard**: Track your server's real-time speeds, peers, and active streams at `/dashboard`.
-- 🛡️ **Pulse Persistence**: Fixed the "premature cutoff" bug—the server now stays alive as long as you are actively watching.
+## 🚀 Nitro Speed Boost (v3.0.0)
+- 🕵️ **Client Spoofing**: Identifies as **qBittorrent 4.4.2** to get prioritized by high-speed seeders and seedboxes.
+- ⚡ **Ultra-Connectivity**: Increased to **50 concurrent connections** for lightning-fast swarm entry.
+- 📡 **High-Performance Trackers**: Injected a massive curated list of "Nitro" trackers for < 3s metadata discovery.
+- 🥇 **4K/1080p Priority**: Resolution-leading labels strictly pinned to the top.
 
 ## ## How It Works
 

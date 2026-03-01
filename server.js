@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '2.9.1',
+        version: '3.0.0',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
@@ -50,7 +50,7 @@ app.get('/debug', async (_req, res) => {
     } catch (err) {
         results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-    res.json({ version: '2.9.1', results });
+    res.json({ version: '3.0.0', results });
 });
 
 // ─── Dashboard ───────────────────────────────────────────
@@ -332,9 +332,10 @@ function getOrCreateEngine(infoHash) {
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
-        connections: 35,           // Optimal connections to find fast peers without exhausting Render's CPU limit
+        id: '-qB4420-' + Math.random().toString(36).substring(2, 14), // Identifies as qBittorrent 4.4.2 (Seedbox Favorite)
+        connections: 50,           // Nitro Push: More connections to find Premium High-Speed seeders
         uploads: 0,                 // Do not upload to save bandwidth/CPU
-        verify: false,              // Skip piece hash verification to save massive CPU 
+        verify: false,              // skip piece hash verification to save massive CPU 
         dht: true,                  // Use DHT
         tracker: true               // Use trackers
     });
