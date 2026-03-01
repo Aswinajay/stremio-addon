@@ -17,7 +17,7 @@ const TPB_MIRRORS = [
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.5.2',
+    version: '3.5.4',
     name: 'Render Torrent Stream (Hydra+)',
     description: 'Auto-rotating Scrapers | Multi-Format Series Search | 4K HDR',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -147,12 +147,11 @@ async function ytsSearch(title, year) {
 }
 
 // 3. Hydra Scraper: TPB API + HTML Proxy support
-async function tpbMovieSearch(title, year) {
-    const q = year ? `${title} ${year}` : title;
+async function tpbSearch(q, category = '201,207,208') {
     for (const mirror of TPB_MIRRORS) {
         try {
             const isApi = mirror.type === 'api';
-            const url = isApi ? `${mirror.url}/q.php?q=${encodeURIComponent(q)}&cat=201,207` : `${mirror.url}/search/${encodeURIComponent(q)}/1/99/201,207`;
+            const url = isApi ? `${mirror.url}/q.php?q=${encodeURIComponent(q)}&cat=${category}` : `${mirror.url}/search/${encodeURIComponent(q)}/1/99/${category}`;
             const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
 
             if (isApi) {
@@ -160,7 +159,7 @@ async function tpbMovieSearch(title, year) {
                 const filtered = results.filter(t => t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000');
                 if (!filtered.length) continue;
                 console.log(`[TPB-API] ✓ ${filtered.length} results via ${mirror.url}`);
-                return filtered.slice(0, 10).map(r => ({
+                return filtered.slice(0, 15).map(r => ({
                     hash: r.info_hash?.toLowerCase(),
                     title: r.name,
                     size: formatSize(r.size),
@@ -174,7 +173,7 @@ async function tpbMovieSearch(title, year) {
                 console.log(`[TPB-HTML] ✓ ${magnets.length} results via ${mirror.url}`);
                 return magnets.slice(0, 10).map(m => ({
                     hash: m.split('btih:')[1].toLowerCase(),
-                    title: title,
+                    title: q,
                     source: 'TPB-Proxy',
                     seeds: 10
                 }));
@@ -298,19 +297,18 @@ async function bitsearchSearch(q) {
 
 // 4.5 TPB IMDB Lookup (Powerful for Indian & Niche content)
 async function tpbImdbLookup(imdbId) {
-    const mirrors = [TPB_API, 'https://tpbay.win', 'https://tpb.party', 'https://pirateproxy.live'];
-    for (const mirror of mirrors) {
+    for (const mirror of TPB_MIRRORS) {
         try {
-            const url = `${mirror}/q.php?q=${imdbId}&cat=0`;
-            const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
-            if (r.status === 403) continue;
+            if (mirror.type !== 'api') continue; // Only API supports direct IMDB query reliably
+            const url = `${mirror.url}/q.php?q=${imdbId}&cat=0`;
+            const r = await axios.get(url, getAxiosOpts());
             const results = (r.data || []).filter(t =>
                 t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
                 t.name !== 'No results returned'
             );
             if (!results.length) continue;
 
-            console.log(`[TPB-IMDB] ✓ ${results.length} results found for ${imdbId} via ${mirror}`);
+            console.log(`[TPB-IMDB] ✓ ${results.length} results via ${mirror.url}`);
             return results.map(r => ({
                 hash: r.info_hash?.toLowerCase(),
                 title: r.name,
@@ -409,84 +407,12 @@ async function fetchStremioAddon(sourceName, baseUrl, type, id) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════
-// ───  SERIES SOURCES  ── (3 sources for series)
-// ═══════════════════════════════════════════════════════════
+// ─── SERIES SOURCES Placeholder (Unified above) ───
+// Removing old redundant eztvSeriesSearch/tpbSeriesSearch logic
 
-// 5. EZTV Episode Lookup (blocked on some clouds ⚠️)
-async function eztvSearch(imdbId, season, episode) {
-    try {
-        const cleanId = imdbId.replace(/^tt/, '');
-        const url = `${EZTV_BASE}/api/get-torrents?imdb_id=${cleanId}&limit=100`;
-        const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
-        const all = r.data?.torrents || [];
-        const filtered = all.filter(t =>
-            String(t.season) === String(season) && String(t.episode) === String(episode)
-        );
-        if (!filtered.length) return [];
 
-        console.log(`[EZTV] ✓ ${filtered.length}/${all.length} for S${season}E${episode}`);
-        return filtered.map(t => ({
-            hash: t.hash?.toLowerCase(),
-            title: t.title || t.filename || '',
-            size: formatSize(t.size_bytes),
-            seeds: t.seeds || 0,
-            source: 'EZTV',
-        })).filter(t => t.hash);
-    } catch (e) { console.error(`[EZTV] ${e.message}`); return []; }
-}
+// Redundant function removed
 
-// 6. TPB TV Search (blocked on some clouds ⚠️)
-async function tpbSeriesSearch(showName, season, episode) {
-    try {
-        const s = String(season).padStart(2, '0');
-        const e = String(episode).padStart(2, '0');
-        const q = `${showName} S${s}E${e}`;
-        const url = `${TPB_API}/q.php?q=${encodeURIComponent(q)}&cat=0`;
-        const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
-        const results = (r.data || []).filter(t =>
-            t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
-            t.name !== 'No results returned'
-        );
-        if (!results.length) return [];
-
-        results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
-        console.log(`[TPB-TV] ✓ ${results.length} results for "${q}"`);
-        return results.slice(0, 15).map(r => ({
-            hash: r.info_hash?.toLowerCase(),
-            title: r.name,
-            size: formatSize(r.size),
-            seeds: parseInt(r.seeders) || 0,
-            source: 'TPB',
-        })).filter(t => t.hash);
-    } catch (e) { console.error(`[TPB-TV] ${e.message}`); return []; }
-}
-
-// 7. TPB HD TV Search (category 208)
-async function tpbHDSeriesSearch(showName, season, episode) {
-    try {
-        const s = String(season).padStart(2, '0');
-        const e = String(episode).padStart(2, '0');
-        const q = `${showName} S${s}E${e}`;
-        const url = `${TPB_API}/q.php?q=${encodeURIComponent(q)}&cat=208`;
-        const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
-        const results = (r.data || []).filter(t =>
-            t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
-            t.name !== 'No results returned'
-        );
-        if (!results.length) return [];
-
-        results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
-        console.log(`[TPB-HDTV] ✓ ${results.length} HD results`);
-        return results.slice(0, 10).map(r => ({
-            hash: r.info_hash?.toLowerCase(),
-            title: r.name,
-            size: formatSize(r.size),
-            seeds: parseInt(r.seeders) || 0,
-            source: 'TPB-HD',
-        })).filter(t => t.hash);
-    } catch (e) { console.error(`[TPB-HDTV] ${e.message}`); return []; }
-}
 
 // ─── Dedup + Build Streams ───────────────────────────────
 const QUALITY_RANKS = {
@@ -625,8 +551,8 @@ builder.defineStreamHandler(async ({ type, id }) => {
                         ];
                         const extra = await Promise.allSettled([
                             tpbImdbLookup(id),
-                            tpbMovieSearch(meta.name, meta.year),
-                            tpbHDMovieSearch(meta.name, meta.year),
+                            tpbSearch(meta.name + ' ' + (meta.year || ''), '201,207'),
+                            tpbSearch(meta.name + ' 1080p', '201,207'),
                             solidTorrentsSearch(meta.name + ' ' + (meta.year || '')),
                             btDigSearch(meta.name + ' ' + (meta.year || '')),
                             bitsearchSearch(meta.name + ' ' + (meta.year || '')),
@@ -674,7 +600,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
                 btDigSearch(`${showName} S${sHex}E${eHex}`),
                 bitsearchSearch(`${showName} S${sHex}E${eHex}`),
                 nyaaRssSearch(showName),
-                showName ? tpbMovieSearch(`${showName} S${sHex}E${eHex}`) : Promise.resolve([]),
+                showName ? tpbSearch(`${showName} S${sHex}E${eHex}`, '208') : Promise.resolve([]),
             ]);
 
             const allTorrents = [];
