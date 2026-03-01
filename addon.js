@@ -17,7 +17,7 @@ const TPB_MIRRORS = [
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.5.4',
+    version: '3.5.5',
     name: 'Render Torrent Stream (Hydra+)',
     description: 'Auto-rotating Scrapers | Multi-Format Series Search | 4K HDR',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -407,12 +407,6 @@ async function fetchStremioAddon(sourceName, baseUrl, type, id) {
     }
 }
 
-// ─── SERIES SOURCES Placeholder (Unified above) ───
-// Removing old redundant eztvSeriesSearch/tpbSeriesSearch logic
-
-
-// Redundant function removed
-
 
 // ─── Dedup + Build Streams ───────────────────────────────
 const QUALITY_RANKS = {
@@ -526,7 +520,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
 
                     const extra = await Promise.allSettled([
                         tpbImdbLookup(id),
-                        tpbMovieSearch(meta?.name, meta?.year),
+                        tpbSearch(meta?.name + ' ' + (meta?.year || ''), '201,207'),
                         solidTorrentsSearch(meta?.name + ' ' + (meta?.year || '')),
                         btDigSearch(meta?.name + ' ' + (meta?.year || '')),
                         bitsearchSearch(meta?.name + ' ' + (meta?.year || '')),
