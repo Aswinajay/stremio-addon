@@ -65,13 +65,28 @@ const activeEngines = {};
 function getTrackers() {
     return [
         'udp://tracker.opentrackr.org:1337/announce',
-        'udp://open.stealth.si:80/announce',
+        'udp://open.demonii.com:1337/announce',
         'udp://tracker.torrent.eu.org:451/announce',
+        'udp://open.stealth.si:80/announce',
+        'https://tracker.tamersunion.org:443/announce',
+        'udp://tracker.dler.org:6969/announce',
         'udp://tracker.bittor.pw:1337/announce',
         'udp://public.popcorn-tracker.org:6969/announce',
-        'udp://tracker.dler.org:6969/announce',
         'udp://exodus.desync.com:6969',
-        'udp://open.demonii.com:1337/announce',
+        'https://torrent.tracker.durukanbal.com:443/announce',
+        'https://cny.fan:443/announce',
+        'udp://utracker.ghostchu-services.top:6969/announce',
+        'udp://tracker.tvunderground.org.ru:3218/announce',
+        'udp://tracker.theoks.net:6969/announce',
+        'udp://tracker.t-1.org:6969/announce',
+        'udp://tracker.plx.im:6969/announce',
+        'udp://opentor.net:6969/announce',
+        'http://tracker.opentrackr.org:1337/announce',
+        'http://tracker.openbittorrent.com:80/announce',
+        'udp://tracker.coppersurfer.tk:6969/announce',
+        'udp://tracker.leechers-paradise.org:6969/announce',
+        'udp://tracker.internetwarriors.net:1337/announce',
+        'udp://tracker.tiny-vps.com:6969/announce'
     ];
 }
 
