@@ -8,19 +8,6 @@ const YTS_MIRRORS = [
 ];
 const EZTV_BASE = 'https://eztvx.to';
 const TPB_API = 'https://apibay.org';
-
-// ─── Trackers ────────────────────────────────────────────
-const TRACKERS = [
-    'udp://tracker.opentrackr.org:1337/announce',
-    'udp://open.stealth.si:80/announce',
-    'udp://tracker.torrent.eu.org:451/announce',
-    'udp://tracker.bittor.pw:1337/announce',
-    'udp://public.popcorn-tracker.org:6969/announce',
-    'udp://tracker.dler.org:6969/announce',
-    'udp://exodus.desync.com:6969',
-    'udp://open.demonii.com:1337/announce',
-];
-
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
@@ -376,16 +363,6 @@ function buildStreams(torrents, baseUrl) {
             behaviorHints: {
                 bingeGroup: `render-proxy-${quality}`,
                 notWebReady: true,
-            },
-        });
-
-        // Native Torrent (Stremio built-in client)
-        streams.push({
-            infoHash: t.hash,
-            title: `🧲 Direct Torrent | ${info}\n${t.title} | ${t.source}`,
-            sources: TRACKERS.map(tr => `tracker:${tr}`),
-            behaviorHints: {
-                bingeGroup: `render-native-${quality}`,
             },
         });
     }
