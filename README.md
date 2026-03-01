@@ -1,32 +1,35 @@
-# 🎬 Render Torrent Stream — Stremio Addon
+# 🎬 Render Torrent Stream — Stremio Addon (v2.9.1)
 
-Stream movies & TV series from torrents **without buffering** using Render.com's free plan as a proxy server.
+Stream movies & TV series from **30+ massive torrent sources** directly into Stremio with **zero buffering**. This addon uses a high-speed cloud proxy to handle the bit-torrent swarm and delivers a clean HTTP stream to your player, perfect for low-end devices.
 
-## How It Works
+## 🌟 New in v2.9.1: Quality-First Update
+- 🏎️ **Resolution-Leading Labels**: Stream list now leads with quality (e.g., `🖥️ 4K | ...`) for instant visibility.
+- 🥇 **Ultra-Priority Sorting**: 4K (2160p) and 1080p results are strictly pinned to the top of your list.
+- 📊 **Live Monitor Dashboard**: Track your server's real-time speeds, peers, and active streams at `/dashboard`.
+- 🛡️ **Pulse Persistence**: Fixed the "premature cutoff" bug—the server now stays alive as long as you are actively watching.
+
+## ## How It Works
 
 ```
-Stremio Player  ←──  HTTP Stream  ←──  Render.com Server  ←──  BitTorrent Swarm
+Stremio Player  ←──  HTTP Stream  ←──  Render.com Server  ←──  30+ Torrent Trackers
 ```
 
-Instead of Stremio downloading torrents directly (which causes buffering on slow connections), this addon routes the torrent traffic through Render.com's high-speed servers and delivers a smooth HTTP video stream to your player.
+## 🚀 Powerful Features
 
-## Features
+- 🎬 **Aggregated Power**: Combination of Official Torrentio mirrors, YTS, Bitsearch, TPB, SolidTorrents, and MediaFusion (Indian content).
+- � **Anime Support**: Direct Nyaa.si RSS scraping for the highest quality anime releases.
+- ⚡ **Buffer-Free Engine**: Optimized with the `torrent-stream` engine, tuned for Render's 512MB RAM limits.
+- 🔄 **Mirror Rotation**: Automated fallback for blocked tracker APIs (TPB, SolidTorrents).
+- 📱 **Universal Seeking**: Full HTTP Range support for instant scrubbing on Android, iOS, and Desktop.
 
-- 🎥 **Movies & TV Series** — Full support for both types via IMDB IDs
-- ⚡ **Buffer-free streaming** — Render downloads the torrent, you get a direct HTTP stream
-- 🔍 **Massive torrent coverage** — Powered by Torrentio (aggregates YTS, 1337x, RARBG, and more)
-- 📱 **Seeking support** — Full HTTP Range request support for scrubbing through videos
-- 🧠 **Memory-safe** — Max 3 concurrent torrents with LRU eviction, stays under 512MB RAM
-- 🆓 **100% free** — Runs on Render.com's free tier
-
-## Deploy to Render.com
+## ## Deploy to Render.com
 
 ### 1. Push to GitHub
 
 ```bash
 git init
 git add .
-git commit -m "Initial commit"
+git commit -m "feat: v2.9.1 - Quality Priority & Live Monitor"
 git remote add origin https://github.com/YOUR_USERNAME/stremio-addon.git
 git push -u origin main
 ```
@@ -36,60 +39,34 @@ git push -u origin main
 1. Go to [render.com](https://render.com/) and sign up (free)
 2. Click **New** → **Web Service**
 3. Connect your GitHub repository
-4. Render will auto-detect the `render.yaml` config:
+4. Use the following settings (auto-detected):
    - **Build Command**: `npm install`
    - **Start Command**: `node server.js`
    - **Plan**: Free
-5. Click **Create Web Service**
-6. Wait for the build to complete (~2 minutes)
-7. Your addon URL will be: `https://your-service-name.onrender.com`
+5. Wait for the build to complete. Your URL will look like: `https://stremio-addon-xxxx.onrender.com`
 
 ### 3. Install in Stremio
 
-1. Open **Stremio** app (desktop or mobile)
-2. Go to **⚙️ Settings** → **Addons**
-3. In the search/URL bar, paste:
-   ```
-   https://your-service-name.onrender.com/manifest.json
-   ```
-4. Click **Install**
-5. Done! Search for any movie or series and look for "🖥️ Render Proxy" streams
+1. Open **Stremio**
+2. Go to **Addons** → **Paste your URL** (must end in `/manifest.json`)
+3. Click **Install**
+4. Look for the resolution-leading streams (e.g., `🖥️ 4K | WEB-DL`) in your list.
 
-## Local Development
+## 📊 Monitoring & Status
 
-```bash
-# Install dependencies
-npm install
+Visit your addon's URL with `/dashboard` appended (e.g., `https://my-addon.onrender.com/dashboard`) to see:
+- Real-time download speeds.
+- Number of active peers.
+- Number of people currently "riding" (streaming) from your server.
 
-# Start the server
-npm start
+## ⚠️ Free Plan Limits & Tuning
 
-# Test the manifest
-curl http://localhost:3000/manifest.json
-
-# Test movie streams (Inception)
-curl http://localhost:3000/stream/movie/tt1375666.json
-
-# Test series streams (Game of Thrones S01E01)
-curl http://localhost:3000/stream/series/tt0944947:1:1.json
-
-# Health check
-curl http://localhost:3000/health
-```
-
-## ⚠️ Render Free Plan Limits
-
-| Resource | Limit |
+| Tuning | Value |
 |----------|-------|
-| RAM | 512 MB |
-| CPU | 0.1 vCPU |
-| Bandwidth | 100 GB/month |
-| Instance Hours | 750 hrs/month |
-| Idle Timeout | 15 min (spins down) |
-| Cold Start | ~50 seconds |
-
-> **Tip**: The server spins down after 15 minutes of no requests. The first request after idle will take ~50 seconds. After that, it's fast.
+| MAX_ENGINES | 3 (Concurrent Movies) |
+| IDLE_TIMEOUT | 10 Minutes (Resets on play) |
+| CONNS_LIMIT | 30 (Optimized for Render CPU) |
+| RAM_LIMIT | 512 MB (Stays well under) |
 
 ## License
-
 MIT
