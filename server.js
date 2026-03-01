@@ -14,10 +14,10 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.16',
+        version: '3.5.17',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
-        maxEngines: MAX_ENGINES,
+        maxEngines: getDynamicLimits().maxEngines,
         ramUsageMB: getRamUsageMB(),
         ramLimitMB: RAM_LIMIT_MB,
         uptime: process.uptime(),
@@ -212,12 +212,19 @@ const addonRouter = getRouter(addonInterface);
 app.use(addonRouter);
 
 // ─── Torrent Engine Management ───────────────────────────
-const MAX_ENGINES = 4;           // Harder cap for Render 512MB
-const RAM_LIMIT_MB = 200;        // Start evicting early to prevent OOM
+const RAM_LIMIT_MB = 200;        // Guardrail
 const ENGINE_TIMEOUT = 5 * 60 * 1000;
 const CONNECT_TIMEOUT = 90000;
 const ZOMBIE_TIMEOUT = 2 * 60 * 1000;
 const activeEngines = {};
+
+function getDynamicLimits() {
+    const ram = getRamUsageMB();
+    if (ram > 180) return { maxEngines: 1, connections: 15, mode: 'CRITICAL' };
+    if (ram > 150) return { maxEngines: 2, connections: 25, mode: 'LOW' };
+    if (ram > 100) return { maxEngines: 3, connections: 40, mode: 'BALANCED' };
+    return { maxEngines: 4, connections: 55, mode: 'HIGH' };
+}
 
 function getRamUsageMB() {
     return Math.round(process.memoryUsage().rss / 1024 / 1024);
@@ -321,12 +328,14 @@ function buildMagnet(infoHash) {
 function evictIfNeeded() {
     const keys = Object.keys(activeEngines);
     const ramMB = getRamUsageMB();
+    const limits = getDynamicLimits();
+
     const overRam = ramMB > RAM_LIMIT_MB;
-    const overCap = keys.length >= MAX_ENGINES;
+    const overCap = keys.length >= limits.maxEngines;
 
     if (!overRam && !overCap) return; // All good, no need to evict
 
-    const reason = overRam ? `RAM ${ramMB}MB > ${RAM_LIMIT_MB}MB limit` : `engine cap (${keys.length}/${MAX_ENGINES})`;
+    const reason = overRam ? `RAM ${ramMB}MB > ${RAM_LIMIT_MB}MB limit` : `dynamic engine cap (${keys.length}/${limits.maxEngines} in ${limits.mode} mode)`;
     console.log(`[Engine] Eviction triggered: ${reason}`);
 
     // Priority 1: Zombie engines (0 speed, 0 active streams)
@@ -418,12 +427,13 @@ function getOrCreateEngine(infoHash) {
     // Evict if at capacity
     evictIfNeeded();
 
+    const limits = getDynamicLimits();
     const magnet = buildMagnet(infoHash);
-    console.log(`[Engine] Creating new engine: ${infoHash.substring(0, 8)}…`);
+    console.log(`[Engine] Creating new engine (${limits.mode} mode, ${limits.connections} connections): ${infoHash.substring(0, 8)}…`);
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
-        connections: 40,           // Lowered from 50 to save 20% networking RAM
+        connections: limits.connections,
         uploads: 0,                 // Do not upload to save bandwidth/CPU
         verify: false,              // skip piece hash verification to save massive CPU 
         dht: true,                  // Use DHT
