@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.0.0',
+        version: '3.1.0',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
@@ -50,7 +50,7 @@ app.get('/debug', async (_req, res) => {
     } catch (err) {
         results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-    res.json({ version: '3.0.0', results });
+    res.json({ version: '3.1.0', results });
 });
 
 // ─── Dashboard ───────────────────────────────────────────
@@ -213,6 +213,7 @@ app.use(addonRouter);
 const MAX_ENGINES = 3;
 const ENGINE_TIMEOUT = 10 * 60 * 1000; // 10 min idle
 const CONNECT_TIMEOUT = 60000; // 60s to connect to torrent
+const ZOMBIE_TIMEOUT = 90 * 1000; // 90s at 0 speed with no active streams = Zombie
 const activeEngines = {};
 
 function getTrackers() {
@@ -273,17 +274,29 @@ function evictIfNeeded() {
     const keys = Object.keys(activeEngines);
     if (keys.length < MAX_ENGINES) return;
 
+    // Prefer evicting ZOMBIE engines (0 speed, 0 active streams) first
+    const zombie = keys.find(k => {
+        const e = activeEngines[k];
+        return e.activeStreams === 0 && e.lastNonZeroSpeed && (Date.now() - e.lastNonZeroSpeed > ZOMBIE_TIMEOUT);
+    });
+
+    if (zombie) {
+        console.log(`[Engine] Evicting ZOMBIE engine: ${zombie.substring(0, 8)}… (0 speed for 90s)`);
+        destroyEngine(zombie);
+        return;
+    }
+
+    // Fallback: evict the oldest accessed engine
     let oldest = null;
     let oldestTime = Infinity;
     for (const key of keys) {
-        if (activeEngines[key].lastAccess < oldestTime) {
+        if (activeEngines[key].activeStreams === 0 && activeEngines[key].lastAccess < oldestTime) {
             oldestTime = activeEngines[key].lastAccess;
             oldest = key;
         }
     }
-
     if (oldest) {
-        console.log(`[Engine] Evicting idle engine: ${oldest.substring(0, 8)}…`);
+        console.log(`[Engine] Evicting oldest idle engine: ${oldest.substring(0, 8)}…`);
         destroyEngine(oldest);
     }
 }
@@ -348,18 +361,36 @@ function getOrCreateEngine(infoHash) {
         timeout: setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT),
     };
 
-    // Log speed every 5 seconds
+    // Log speed every 5 seconds + track zombie state
+    entry.lastNonZeroSpeed = Date.now(); // start with current time
     entry.logInterval = setInterval(() => {
         if (!engine.swarm) return;
         const speed = (engine.swarm.downloadSpeed() / 1024 / 1024).toFixed(2);
         const peers = engine.swarm.wires.length;
         const downloaded = (engine.swarm.downloaded / 1024 / 1024).toFixed(2);
 
+        if (parseFloat(speed) > 0) {
+            entry.lastNonZeroSpeed = Date.now(); // reset zombie timer
+        }
+
         // Only log if it's actually doing something
         if (speed > 0 || peers > 0) {
             console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speed} MB/s | 👥 ${peers} peers | 💾 ${downloaded} MB`);
         }
     }, 5000);
+
+    // Global zombie scan: kill stalled engines every 2 minutes
+    if (!global._zombieScannerStarted) {
+        global._zombieScannerStarted = true;
+        setInterval(() => {
+            for (const [hash, e] of Object.entries(activeEngines)) {
+                if (e.activeStreams === 0 && e.lastNonZeroSpeed && (Date.now() - e.lastNonZeroSpeed > ZOMBIE_TIMEOUT)) {
+                    console.log(`[Zombie] Killing stalled engine ${hash.substring(0, 8)}… (0 MB/s for 90s)`);
+                    destroyEngine(hash);
+                }
+            }
+        }, 2 * 60 * 1000);
+    }
 
     // Mark ready when the engine fires 'ready'
     engine.on('ready', () => {

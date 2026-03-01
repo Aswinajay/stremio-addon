@@ -187,23 +187,56 @@ async function tpbHDMovieSearch(title, year) {
     return [];
 }
 
-// 4.6 SolidTorrents API Search (Great for Indian & 4K)
+// 4.6 SolidTorrents (Mirror Rotation)
 async function solidTorrentsSearch(q) {
-    try {
-        const url = `https://solidtorrents.net/api/v1/search?q=${encodeURIComponent(q)}&category=all`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
-        const results = r.data?.results || [];
-        if (!results.length) return [];
+    const mirrors = [
+        'https://solidtorrents.to',
+        'https://solidtorrents.eu',
+        'https://solidtorrents.net',
+    ];
+    for (const mirror of mirrors) {
+        try {
+            const url = `${mirror}/api/v1/search?q=${encodeURIComponent(q)}&category=all`;
+            const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+            if (r.status === 403) continue;
+            const results = r.data?.results || [];
+            if (!results.length) continue;
+            console.log(`[SolidTorrents] ✓ ${results.length} results via ${mirror}`);
+            return results.map(r => ({
+                hash: r.infoHash?.toLowerCase(),
+                title: r.title,
+                size: formatSize(r.size),
+                seeds: r.seeders || 0,
+                source: 'SolidTorrents',
+            })).filter(t => t.hash);
+        } catch (e) { continue; }
+    }
+    return [];
+}
 
-        console.log(`[SolidTorrents] ✓ ${results.length} results found for ${q}`);
-        return results.map(r => ({
-            hash: r.infoHash?.toLowerCase(),
-            title: r.title,
-            size: formatSize(r.size),
-            seeds: r.seeders || 0,
-            source: 'SolidTorrents',
-        })).filter(t => t.hash);
-    } catch (e) { console.error(`[SolidTorrents] ${e.message}`); return []; }
+// 4.65 TorrentGalaxy RSS Search
+async function torrentGalaxySearch(q) {
+    try {
+        const url = `https://torrentgalaxy.to/rss?search=${encodeURIComponent(q)}&cat=3`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const xml = r.data || '';
+        const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+        if (!items.length) return [];
+
+        const results = items.map(item => {
+            const title = item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/)?.[1] ||
+                item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || 'Unknown';
+            const magnet = item.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{32,40})/i)?.[1]?.toLowerCase();
+            const seedsStr = item.match(/<seeders>([\d]+)<\/seeders>/)?.[1] ||
+                item.match(/Seeds:\s*(\d+)/i)?.[1] || '0';
+            return { hash: magnet, title, seeds: parseInt(seedsStr), source: 'TGalaxy' };
+        }).filter(t => t.hash);
+
+        if (!results.length) return [];
+        results.sort((a, b) => b.seeds - a.seeds);
+        console.log(`[TorrentGalaxy] ✓ ${results.length} results`);
+        return results.slice(0, 10);
+    } catch (e) { console.error(`[TorrentGalaxy] ${e.message}`); return []; }
 }
 
 // 4.7 Nyaa RSS Search (Direct Anime Scraper)
@@ -544,6 +577,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
                         tpbImdbLookup(id),
                         tpbMovieSearch(meta?.name, meta?.year),
                         solidTorrentsSearch(meta?.name + ' ' + (meta?.year || '')),
+                        torrentGalaxySearch(meta?.name + ' ' + (meta?.year || '')),
                         bitsearchSearch(meta?.name + ' ' + (meta?.year || '')),
                         nyaaRssSearch(meta?.name),
                         ...metaScrapers
@@ -569,6 +603,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
                             tpbMovieSearch(meta.name, meta.year),
                             tpbHDMovieSearch(meta.name, meta.year),
                             solidTorrentsSearch(meta.name + ' ' + (meta.year || '')),
+                            torrentGalaxySearch(meta.name + ' ' + (meta.year || '')),
                             bitsearchSearch(meta.name + ' ' + (meta.year || '')),
                             nyaaRssSearch(meta.name),
                             ...metaScrapers
