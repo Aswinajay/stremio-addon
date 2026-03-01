@@ -345,7 +345,6 @@ function getOrCreateEngine(infoHash) {
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
-        id: '-qB4420-' + Math.random().toString(36).substring(2, 14), // Identifies as qBittorrent 4.4.2 (Seedbox Favorite)
         connections: 50,           // Nitro Push: More connections to find Premium High-Speed seeders
         uploads: 0,                 // Do not upload to save bandwidth/CPU
         verify: false,              // skip piece hash verification to save massive CPU 
