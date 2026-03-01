@@ -1,29 +1,27 @@
 {
-  "name": "stremio-addon",
-  "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Aswinajay/stremio-addon.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/Aswinajay/stremio-addon/issues"
-  },
-  "homepage": "https://github.com/Aswinajay/stremio-addon#readme",
-  "dependencies": {
-    "axios": "^1.13.6",
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "stremio-addon-sdk": "^1.6.10",
-    "torrent-stream": "^1.2.1"
-  }
+    "name": "render-torrent-stream",
+    "version": "1.0.0",
+    "description": "Stremio addon that streams torrents through Render.com — buffer-free movies & series",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "dependencies": {
+        "axios": "^1.7.0",
+        "cors": "^2.8.5",
+        "express": "^4.21.0",
+        "stremio-addon-sdk": "^1.6.10",
+        "torrent-stream": "^1.2.1"
+    },
+    "keywords": [
+        "stremio",
+        "addon",
+        "torrent",
+        "streaming",
+        "render"
+    ],
+    "license": "MIT"
 }

@@ -1,126 +1,281 @@
 const express = require('express');
 const cors = require('cors');
-const { getRouter } = require('stremio-addon-sdk');
 const torrentStream = require('torrent-stream');
-const { addonInterface, setHost } = require('./addon');
+const addonInterface = require('./addon');
+const { getRouter } = require('stremio-addon-sdk');
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+
+// ─── CORS ────────────────────────────────────────────────
 app.use(cors());
 
-app.use((req, res, next) => {
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const host = req.headers['x-forwarded-host'] || req.get('host');
-    if (host) {
-        setHost(`${protocol}://${host}`);
-    }
-    next();
+// ─── Health check ────────────────────────────────────────
+app.get('/health', (_req, res) => {
+    res.json({
+        status: 'ok',
+        activeEngines: Object.keys(activeEngines).length,
+        maxEngines: MAX_ENGINES,
+        uptime: process.uptime(),
+    });
 });
 
-// Mount the Stremio Addon routes (/manifest.json, /stream/...)
-app.use(getRouter(addonInterface));
+// ─── Stremio Addon SDK routes ────────────────────────────
+const addonRouter = getRouter(addonInterface);
+app.use(addonRouter);
 
-const activeEngines = new Map();
+// ─── Torrent Engine Management ───────────────────────────
+const MAX_ENGINES = 3; // Keep memory under 512MB
+const ENGINE_TIMEOUT = 5 * 60 * 1000; // 5 min idle timeout
+const activeEngines = {};
 
-app.get('/stream/:infoHash', (req, res) => {
-    const infoHash = req.params.infoHash;
-    const magnetURI = `magnet:?xt=urn:btih:${infoHash}`;
+function getTrackers() {
+    return [
+        'udp://tracker.opentrackr.org:1337/announce',
+        'udp://open.stealth.si:80/announce',
+        'udp://tracker.torrent.eu.org:451/announce',
+        'udp://tracker.bittor.pw:1337/announce',
+        'udp://public.popcorn-tracker.org:6969/announce',
+        'udp://tracker.dler.org:6969/announce',
+        'udp://exodus.desync.com:6969',
+        'udp://open.demonii.com:1337/announce',
+    ];
+}
 
-    console.log(`[stream] HTTP Request for infoHash: ${infoHash}`);
+function buildMagnet(infoHash) {
+    const trackers = getTrackers();
+    const trackerParams = trackers.map(t => `&tr=${encodeURIComponent(t)}`).join('');
+    return `magnet:?xt=urn:btih:${infoHash}${trackerParams}`;
+}
 
-    let engine = activeEngines.get(infoHash);
+// Evict least-recently-used engine if at capacity
+function evictIfNeeded() {
+    const keys = Object.keys(activeEngines);
+    if (keys.length < MAX_ENGINES) return;
 
-    if (!engine) {
-        console.log(`[stream] Creating new engine for ${infoHash}`);
-        engine = torrentStream(magnetURI, {
-            path: '/tmp/torrent-stream-' + infoHash
-        });
-
-        engine.on('ready', () => {
-            console.log(`[stream] Engine ready for ${infoHash}`);
-            let targetFile = engine.files[0];
-
-            for (let i = 1; i < engine.files.length; i++) {
-                if (engine.files[i].length > targetFile.length) {
-                    targetFile = engine.files[i];
-                }
-            }
-
-            console.log(`[stream] Selected file: ${targetFile.name} (${targetFile.length} bytes)`);
-            engine.targetFile = targetFile;
-            engine.isReadyForStream = true;
-        });
-
-        activeEngines.set(infoHash, engine);
-
-        // Simple memory cleanup: remove engine after 2 hours
-        setTimeout(() => {
-            if (activeEngines.has(infoHash)) {
-                console.log(`[stream] Destroying engine for ${infoHash} after 2 hours.`);
-                const eng = activeEngines.get(infoHash);
-                eng.destroy();
-                activeEngines.delete(infoHash);
-            }
-        }, 2 * 60 * 60 * 1000);
+    // Find the one with the oldest lastAccess
+    let oldest = null;
+    let oldestTime = Infinity;
+    for (const key of keys) {
+        if (activeEngines[key].lastAccess < oldestTime) {
+            oldestTime = activeEngines[key].lastAccess;
+            oldest = key;
+        }
     }
 
-    const waitForEngine = () => {
-        if (engine.isReadyForStream && engine.targetFile) {
-            serveFile(req, res, engine.targetFile);
-        } else {
-            console.log(`[stream] Waiting for engine ready...`);
-            setTimeout(() => {
-                if (activeEngines.has(infoHash)) {
-                    waitForEngine();
-                } else {
-                    res.status(500).send('Engine destroyed before ready');
-                }
-            }, 500);
-        }
+    if (oldest) {
+        console.log(`[Engine] Evicting idle engine: ${oldest}`);
+        destroyEngine(oldest);
+    }
+}
+
+function destroyEngine(infoHash) {
+    const entry = activeEngines[infoHash];
+    if (!entry) return;
+
+    clearTimeout(entry.timeout);
+    try {
+        entry.engine.destroy();
+    } catch (e) {
+        // ignore
+    }
+    delete activeEngines[infoHash];
+    console.log(`[Engine] Destroyed: ${infoHash.substring(0, 8)}… (active: ${Object.keys(activeEngines).length})`);
+}
+
+function getOrCreateEngine(infoHash) {
+    if (activeEngines[infoHash]) {
+        const entry = activeEngines[infoHash];
+        entry.lastAccess = Date.now();
+
+        // Reset idle timeout
+        clearTimeout(entry.timeout);
+        entry.timeout = setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT);
+
+        return entry.engine;
+    }
+
+    // Evict if at capacity
+    evictIfNeeded();
+
+    const magnet = buildMagnet(infoHash);
+    console.log(`[Engine] Creating new engine: ${infoHash.substring(0, 8)}…`);
+
+    const engine = torrentStream(magnet, {
+        tmp: '/tmp/torrent-stream',
+        connections: 50,
+        uploads: 0, // Don't upload (save bandwidth)
+        verify: true,
+        dht: true,
+    });
+
+    const entry = {
+        engine,
+        lastAccess: Date.now(),
+        timeout: setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT),
     };
 
-    waitForEngine();
-});
+    activeEngines[infoHash] = entry;
+    return engine;
+}
 
-const serveFile = (req, res, file) => {
-    const range = req.headers.range;
+// ─── Video file detection ────────────────────────────────
+const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v'];
 
-    if (!range) {
-        res.writeHead(200, {
-            'Content-Length': file.length,
-            'Content-Type': 'video/mp4'
-        });
-        file.createReadStream().pipe(res);
-        return;
+function isVideoFile(filename) {
+    const lower = filename.toLowerCase();
+    return VIDEO_EXTENSIONS.some(ext => lower.endsWith(ext));
+}
+
+function findVideoFile(files, fileIdx) {
+    // If fileIdx is specified, use that directly
+    if (fileIdx !== undefined && fileIdx !== null && files[fileIdx]) {
+        return files[fileIdx];
     }
 
-    const positions = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(positions[0], 10);
-    const end = positions[1] ? parseInt(positions[1], 10) : file.length - 1;
-    const chunksize = (end - start) + 1;
+    // Otherwise find the largest video file
+    let bestFile = null;
+    let bestSize = 0;
 
-    console.log(`[stream] Serving range ${start}-${end} (${chunksize} bytes) of ${file.name}`);
+    for (const file of files) {
+        if (isVideoFile(file.name) && file.length > bestSize) {
+            bestFile = file;
+            bestSize = file.length;
+        }
+    }
 
-    res.writeHead(206, {
-        'Content-Range': `bytes ${start}-${end}/${file.length}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunksize,
-        'Content-Type': 'video/mp4'
+    return bestFile;
+}
+
+// ─── Stream Proxy Route ─────────────────────────────────
+app.get('/stream/:infoHash', (req, res) => {
+    const { infoHash } = req.params;
+    const fileIdx = req.query.fileIdx !== undefined ? parseInt(req.query.fileIdx, 10) : undefined;
+
+    console.log(`[Stream] Request for ${infoHash.substring(0, 8)}… fileIdx=${fileIdx}`);
+
+    const engine = getOrCreateEngine(infoHash);
+    let responded = false;
+
+    // Handle client disconnect
+    req.on('close', () => {
+        console.log(`[Stream] Client disconnected: ${infoHash.substring(0, 8)}…`);
     });
 
-    const stream = file.createReadStream({ start, end });
-    stream.pipe(res);
+    engine.on('ready', () => {
+        if (responded) return;
+        responded = true;
 
-    stream.on('error', (err) => {
-        console.error(`[stream] Error in read stream:`, err.message);
+        const file = findVideoFile(engine.files, fileIdx);
+
+        if (!file) {
+            console.error(`[Stream] No video file found in torrent ${infoHash.substring(0, 8)}…`);
+            res.status(404).json({ error: 'No video file found in this torrent' });
+            return;
+        }
+
+        console.log(`[Stream] Serving: "${file.name}" (${(file.length / 1024 / 1024).toFixed(1)} MB)`);
+
+        const totalSize = file.length;
+
+        // Determine Content-Type from extension
+        const ext = file.name.split('.').pop().toLowerCase();
+        const mimeTypes = {
+            mp4: 'video/mp4',
+            mkv: 'video/x-matroska',
+            avi: 'video/x-msvideo',
+            mov: 'video/quicktime',
+            wmv: 'video/x-ms-wmv',
+            flv: 'video/x-flv',
+            webm: 'video/webm',
+            m4v: 'video/mp4',
+        };
+        const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+        // Handle Range requests (seeking support)
+        const rangeHeader = req.headers.range;
+
+        if (rangeHeader) {
+            const parts = rangeHeader.replace(/bytes=/, '').split('-');
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+            const chunkSize = end - start + 1;
+
+            console.log(`[Stream] Range: ${start}-${end}/${totalSize} (${(chunkSize / 1024 / 1024).toFixed(1)} MB)`);
+
+            res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunkSize,
+                'Content-Type': contentType,
+            });
+
+            const stream = file.createReadStream({ start, end });
+            stream.pipe(res);
+
+            stream.on('error', (err) => {
+                console.error(`[Stream] Read error: ${err.message}`);
+                if (!res.headersSent) {
+                    res.status(500).end();
+                }
+            });
+        } else {
+            // Full file request
+            console.log(`[Stream] Full file request: ${(totalSize / 1024 / 1024).toFixed(1)} MB`);
+
+            res.writeHead(200, {
+                'Content-Length': totalSize,
+                'Content-Type': contentType,
+                'Accept-Ranges': 'bytes',
+            });
+
+            const stream = file.createReadStream();
+            stream.pipe(res);
+
+            stream.on('error', (err) => {
+                console.error(`[Stream] Read error: ${err.message}`);
+                if (!res.headersSent) {
+                    res.status(500).end();
+                }
+            });
+        }
     });
-};
 
-app.get('/', (req, res) => {
-    res.send('Render Torrent Stream for Stremio is running. Add this url to Stremio: ' + currentHost + '/manifest.json');
+    // Handle engine errors
+    engine.on('error', (err) => {
+        console.error(`[Engine Error] ${err.message}`);
+        if (!responded) {
+            responded = true;
+            res.status(500).json({ error: 'Failed to initialize torrent' });
+        }
+    });
+
+    // Timeout: if torrent doesn't connect in 30s, give up
+    setTimeout(() => {
+        if (!responded) {
+            responded = true;
+            console.error(`[Stream] Timeout waiting for torrent: ${infoHash.substring(0, 8)}…`);
+            res.status(504).json({ error: 'Torrent connection timed out' });
+        }
+    }, 30000);
 });
 
-const PORT = process.env.PORT || 3000;
+// ─── Start Server ────────────────────────────────────────
 app.listen(PORT, () => {
-    console.log(`Addon listening on port ${PORT}`);
-    console.log(`Stremio URL: http://localhost:${PORT}/manifest.json`);
+    const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    console.log(`
+╔══════════════════════════════════════════════════════╗
+║         🎬 Render Torrent Stream Addon 🎬            ║
+╠══════════════════════════════════════════════════════╣
+║                                                      ║
+║  Server running on port ${String(PORT).padEnd(28)}  ║
+║                                                      ║
+║  Manifest URL:                                       ║
+║  ${(baseUrl + '/manifest.json').padEnd(52)}║
+║                                                      ║
+║  Install in Stremio:                                 ║
+║  Open Stremio → Addons → paste the manifest URL      ║
+║                                                      ║
+╚══════════════════════════════════════════════════════╝
+    `);
 });
