@@ -11,9 +11,9 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.4.0',
+    version: '2.5.0',
     name: 'Render Torrent Stream',
-    description: 'Stream from 20+ massive sources (1337x, YTS, Indian: TamilBlasters, TamilMV, Hindi movies, TPB, EZTV) — 100% buffer-free',
+    description: 'Stream from 25+ massive sources (1337x, YTS, Indian, SolidTorrents, TPB, Nyaa, Bitsearch) — 100% buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
@@ -177,6 +177,34 @@ async function tpbHDMovieSearch(title, year) {
             source: 'TPB-HD',
         })).filter(t => t.hash);
     } catch (e) { console.error(`[TPB-HD] ${e.message}`); return []; }
+}
+
+// 4.6 SolidTorrents API Search (Great for Indian & 4K)
+async function solidTorrentsSearch(q) {
+    try {
+        const url = `https://solidtorrents.net/api/v1/search?q=${encodeURIComponent(q)}&category=all`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const results = r.data?.results || [];
+        if (!results.length) return [];
+
+        console.log(`[SolidTorrents] ✓ ${results.length} results found for ${q}`);
+        return results.map(r => ({
+            hash: r.infoHash?.toLowerCase(),
+            title: r.title,
+            size: formatSize(r.size),
+            seeds: r.seeders || 0,
+            source: 'SolidTorrents',
+        })).filter(t => t.hash);
+    } catch (e) { console.error(`[SolidTorrents] ${e.message}`); return []; }
+}
+
+// 4.7 Nyaa Search (Anime specialist)
+async function nyaaSearch(q) {
+    try {
+        // Nyaa doesn't have a great open API, but we can hit it via MediaFusion (which we already do)
+        // or a direct scraper if we want. For now, hitting it via MediaFusion's specialized indexer.
+        return fetchStremioAddon('Nyaa-Anime', 'https://mediafusion.elfhosted.com/indexers=nyaasi', 'movie', q);
+    } catch (e) { return []; }
 }
 
 // 4.5 TPB IMDB Lookup (Powerful for Indian & Niche content)
@@ -451,15 +479,18 @@ builder.defineStreamHandler(async ({ type, id }) => {
                     // Source 3-10: Meta-Scraper Fetch (Parallel)
                     const metaScrapers = [
                         fetchTorrentio('movie', id),
+                        fetchStremioAddon('Torrentio-Backup', 'https://torrentio.viren070.me', 'movie', id),
                         fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
                         fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
+                        fetchStremioAddon('MediaFusion-All', 'https://mediafusion.elfhosted.com/all-indexers', 'movie', id),
                         fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'movie', id),
                         fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'movie', id),
                     ];
 
                     const extra = await Promise.allSettled([
-                        tpbImdbLookup(id), // Dedicated IMDB lookup for better hits
+                        tpbImdbLookup(id),
                         tpbMovieSearch(meta?.name, meta?.year),
+                        solidTorrentsSearch(meta?.name + ' ' + (meta?.year || '')),
                         ...metaScrapers
                     ]);
 
@@ -474,14 +505,17 @@ builder.defineStreamHandler(async ({ type, id }) => {
                     try {
                         const metaScrapers = [
                             fetchTorrentio('movie', id),
+                            fetchStremioAddon('Torrentio-Backup', 'https://torrentio.viren070.me', 'movie', id),
                             fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
                             fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
-                            fetchStremioAddon('Gog', 'https://gog.elfhosted.com/indexers=torrentio', 'movie', id),
+                            fetchStremioAddon('MediaFusion-All', 'https://mediafusion.elfhosted.com/all-indexers', 'movie', id),
                             fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'movie', id),
                         ];
                         const extra = await Promise.allSettled([
+                            tpbImdbLookup(id),
                             tpbMovieSearch(meta.name, meta.year),
                             tpbHDMovieSearch(meta.name, meta.year),
+                            solidTorrentsSearch(meta.name + ' ' + (meta.year || '')),
                             ...metaScrapers
                         ]);
                         extra.forEach(s => {
@@ -510,10 +544,13 @@ builder.defineStreamHandler(async ({ type, id }) => {
             const sources = await Promise.allSettled([
                 eztvSearch(imdbId, season, episode),
                 fetchTorrentio('series', id),
+                fetchStremioAddon('Torrentio-Backup', 'https://torrentio.viren070.me', 'series', id),
                 fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'series', id),
                 fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'series', id),
+                fetchStremioAddon('MediaFusion-All', 'https://mediafusion.elfhosted.com/all-indexers', 'series', id),
                 fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'series', id),
-                tpbImdbLookup(imdbId), // Series IMDB lookup support
+                tpbImdbLookup(imdbId),
+                solidTorrentsSearch(showName + ' S0' + season),
                 showName ? tpbSeriesSearch(showName, season, episode) : Promise.resolve([]),
                 showName ? tpbHDSeriesSearch(showName, season, episode) : Promise.resolve([]),
             ]);

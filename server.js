@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '2.4.0',
+        version: '2.5.0',
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
         uptime: process.uptime(),
@@ -49,7 +49,7 @@ app.get('/debug', async (_req, res) => {
     } catch (err) {
         results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-    res.json({ version: '2.4.0', results });
+    res.json({ version: '2.5.0', results });
 });
 
 // ─── Landing Page ────────────────────────────────────────
@@ -142,8 +142,8 @@ app.get('/', (req, res) => {
             
             <div class="features">
                 <div class="feature">⚡ Cloud Proxy</div>
-                <div class="feature">🎬 20+ Massive Sources</div>
-                <div class="feature">🇮🇳 Indian Movies & Series</div>
+                <div class="feature">🎬 25+ Massive Sources</div>
+                <div class="feature">🍿 SolidTorrents & Nyaa</div>
             </div>
         </div>
     </body>
