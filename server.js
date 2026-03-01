@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.15',
+        version: '3.5.16',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
@@ -486,16 +486,21 @@ function getOrCreateEngine(infoHash) {
         // Log if active — include RAM so we can monitor memory pressure
         if (parseFloat(speedMb) > 0 || peers > 0) {
             const ramMB = getRamUsageMB();
-            const ramWarn = ramMB > 350 ? ' ⚠️ RAM' : '';
+            const ramWarn = ramMB > 180 ? ' ⚠️ RAM' : '';
             console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speedMb} MB/s | 👥 ${peers} peers | 💾 ${downloaded} MB | avg:${avgSpeed.toFixed(2)} | 🧠 ${ramMB}MB${ramWarn}`);
         }
     }, 5000);
 
-    // Global zombie scan every 90s
-    // Kills engines that have been below 0.1 MB/s for ZOMBIE_TIMEOUT with no active streams
+    // Proactive Memory Guard: Scan every 30s
     if (!global._zombieScannerStarted) {
         global._zombieScannerStarted = true;
         setInterval(() => {
+            // Force eviction check if over limit
+            if (getRamUsageMB() > RAM_LIMIT_MB) {
+                console.log(`[Guard] Proactive RAM Check: ${getRamUsageMB()}MB exceeds ${RAM_LIMIT_MB}MB limit`);
+                evictIfNeeded();
+            }
+
             const zombieAge = ZOMBIE_TIMEOUT / 1000;
             for (const [hash, e] of Object.entries(activeEngines)) {
                 const timeSinceGoodSpeed = Date.now() - (e.lastNonZeroSpeed || 0);
@@ -523,7 +528,7 @@ function getOrCreateEngine(infoHash) {
                     }
                 }
             }
-        }, 90 * 1000);
+        }, 30 * 1000);
     }
 
     // Mark ready when the engine fires 'ready'
