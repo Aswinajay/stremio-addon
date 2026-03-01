@@ -199,8 +199,10 @@ async function tpbHDMovieSearch(title, year) {
 // 5. Torrentio Proxy (scrapes 1337x, RARBG, TorrentGalaxy, etc)
 async function fetchTorrentio(type, id) {
     try {
-        const url = `https://torrentio.strem.fun/stream/${type}/${id}.json`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        // Use allorigins to bypass Torrentio's Cloudflare block on Render datacenter IPs
+        const targetUrl = encodeURIComponent(`https://torrentio.strem.fun/stream/${type}/${id}.json`);
+        const url = `https://api.allorigins.win/raw?url=${targetUrl}`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 10000 });
         const streams = r.data?.streams || [];
         if (!streams.length) return [];
 
