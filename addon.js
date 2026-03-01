@@ -193,6 +193,50 @@ async function tpbHDMovieSearch(title, year) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// ───  META SOURCES (Torrentio as scraper)
+// ═══════════════════════════════════════════════════════════
+
+// 5. Torrentio Proxy (scrapes 1337x, RARBG, TorrentGalaxy, etc)
+async function fetchTorrentio(type, id) {
+    try {
+        const url = `https://torrentio.strem.fun/stream/${type}/${id}.json`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const streams = r.data?.streams || [];
+        if (!streams.length) return [];
+
+        console.log(`[Torrentio] ✓ ${streams.length} streams for ${id}`);
+        return streams.map(s => {
+            const lines = s.title ? s.title.split('\n') : [];
+            const qualityMatch = s.name?.match(/Torrentio\s+(.+)/i);
+            const quality = qualityMatch ? qualityMatch[1] : '?';
+
+            // Extract size and seeds from title if possible
+            let size = '';
+            let seeds = 0;
+            const sizeMatch = s.title?.match(/💾\s*([^👥]+)/);
+            if (sizeMatch) size = sizeMatch[1].trim();
+            const seedsMatch = s.title?.match(/👤\s*(\d+)/);
+            if (seedsMatch) seeds = parseInt(seedsMatch[1]);
+
+            const title = lines.length > 2 ? lines[2].trim() : lines.join(' ');
+            const source = lines.length > 0 ? `Torrentio ${lines[0].trim()}` : 'Torrentio';
+
+            return {
+                hash: s.infoHash?.toLowerCase(),
+                title: title,
+                quality: quality,
+                size: size,
+                seeds: seeds,
+                source: source,
+            };
+        }).filter(t => t.hash);
+    } catch (e) {
+        console.error(`[Torrentio Error] ${e.message}`);
+        return [];
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
 // ───  SERIES SOURCES  ── (3 sources for series)
 // ═══════════════════════════════════════════════════════════
 
@@ -335,25 +379,29 @@ builder.defineStreamHandler(async ({ type, id }) => {
                     allTorrents.push(...ytsSearch$);
 
                     // Source 3+4: TPB movie search (parallel)
-                    const [tpb, tpbHD] = await Promise.allSettled([
+                    const [tpb, tpbHD, torrentio] = await Promise.allSettled([
                         tpbMovieSearch(meta.name, meta.year),
                         tpbHDMovieSearch(meta.name, meta.year),
+                        fetchTorrentio('movie', id),
                     ]);
                     if (tpb.status === 'fulfilled') allTorrents.push(...tpb.value);
                     if (tpbHD.status === 'fulfilled') allTorrents.push(...tpbHD.value);
+                    if (torrentio.status === 'fulfilled') allTorrents.push(...torrentio.value);
                 }
             } else {
                 // YTS worked, still try TPB for more options (in parallel, non-blocking)
                 const meta = await getMeta(id, 'movie');
                 if (meta?.name) {
                     try {
-                        const [tpb, tpbHD] = await Promise.allSettled([
+                        const [tpb, tpbHD, torrentio] = await Promise.allSettled([
                             tpbMovieSearch(meta.name, meta.year),
                             tpbHDMovieSearch(meta.name, meta.year),
+                            fetchTorrentio('movie', id),
                         ]);
                         if (tpb.status === 'fulfilled') allTorrents.push(...tpb.value);
                         if (tpbHD.status === 'fulfilled') allTorrents.push(...tpbHD.value);
-                    } catch (e) { /* ignore TPB errors */ }
+                        if (torrentio.status === 'fulfilled') allTorrents.push(...torrentio.value);
+                    } catch (e) { /* ignore extra stream errors */ }
                 }
             }
 
@@ -376,6 +424,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
             // Query ALL series sources in parallel
             const sources = await Promise.allSettled([
                 eztvSearch(imdbId, season, episode),
+                fetchTorrentio('series', id),
                 showName ? tpbSeriesSearch(showName, season, episode) : Promise.resolve([]),
                 showName ? tpbHDSeriesSearch(showName, season, episode) : Promise.resolve([]),
             ]);
