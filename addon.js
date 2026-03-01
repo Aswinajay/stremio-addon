@@ -17,7 +17,7 @@ const TPB_MIRRORS = [
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.5.7',
+    version: '3.5.8',
     name: 'Render Torrent Stream (Hydra+)',
     description: 'Auto-rotating Scrapers | Multi-Format Series Search | 4K HDR',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -462,9 +462,8 @@ function buildStreams(torrents, baseUrl) {
         return true;
     });
 
-    const topTorrents = filtered.slice(0, 30); // Top 30 sorted results
-
-    for (const t of topTorrents) {
+    for (const t of filtered) {
+        if (streams.length >= 40) break; // Cap at 40 UNIQUE streams
         if (!t.hash || seen.has(t.hash)) continue;
         seen.add(t.hash);
 
