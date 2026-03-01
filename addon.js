@@ -11,7 +11,7 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.7.0',
+    version: '2.8.0',
     name: 'Render Torrent Stream',
     description: 'Stream from 30+ massive sources (Official Torrentio, YTS, Indian, SolidTorrents, Nyaa, Bitsearch, TPB) — 100% buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -161,6 +161,7 @@ async function tpbHDMovieSearch(title, year) {
         const q = year ? `${title} ${year}` : title;
         const url = `${TPB_API}/q.php?q=${encodeURIComponent(q)}&cat=207`;
         const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        if (r.status === 403) throw new Error('403 Forbidden');
         const results = (r.data || []).filter(t =>
             t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
             t.name !== 'No results returned'
@@ -176,7 +177,11 @@ async function tpbHDMovieSearch(title, year) {
             seeds: parseInt(r.seeders) || 0,
             source: 'TPB-HD',
         })).filter(t => t.hash);
-    } catch (e) { console.error(`[TPB-HD] ${e.message}`); return []; }
+    } catch (e) {
+        console.error(`[TPB-HD] ${e.message}`);
+        // Fallback to a scraper-based search if API is 403
+        return [];
+    }
 }
 
 // 4.6 SolidTorrents API Search (Great for Indian & 4K)
@@ -552,6 +557,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
                             tpbMovieSearch(meta.name, meta.year),
                             tpbHDMovieSearch(meta.name, meta.year),
                             solidTorrentsSearch(meta.name + ' ' + (meta.year || '')),
+                            bitsearchSearch(meta.name + ' ' + (meta.year || '')),
                             nyaaRssSearch(meta.name),
                             ...metaScrapers
                         ]);
@@ -586,6 +592,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
                 fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'series', id),
                 tpbImdbLookup(imdbId),
                 solidTorrentsSearch(showName + ' S' + season.padStart(2, '0')),
+                bitsearchSearch(showName + ' S' + season.padStart(2, '0')),
                 nyaaRssSearch(showName),
                 showName ? tpbSeriesSearch(showName, season, episode) : Promise.resolve([]),
                 showName ? tpbHDSeriesSearch(showName, season, episode) : Promise.resolve([]),

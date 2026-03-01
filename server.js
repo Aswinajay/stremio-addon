@@ -14,7 +14,8 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '2.7.0',
+        version: '2.8.0',
+        dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
         uptime: process.uptime(),
@@ -49,9 +50,57 @@ app.get('/debug', async (_req, res) => {
     } catch (err) {
         results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-    res.json({ version: '2.7.0', results });
+    res.json({ version: '2.8.0', results });
 });
 
+// ─── Dashboard ───────────────────────────────────────────
+app.get('/dashboard', (req, res) => {
+    const engines = Object.entries(activeEngines).map(([hash, entry]) => ({
+        id: hash.substring(0, 8),
+        ready: entry.isReady,
+        speed: (entry.engine.swarm.downloadSpeed() / 1024 / 1024).toFixed(2) + ' MB/s',
+        peers: entry.engine.swarm.wires.length,
+        downloaded: (entry.engine.swarm.downloaded / 1024 / 1024).toFixed(2) + ' MB',
+        lastAccess: new Date(entry.lastAccess).toLocaleTimeString(),
+        files: entry.engine.files?.length || 0
+    }));
+
+    res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Live Monitor</title>
+        <style>
+            body { background: #121212; color: #fff; font-family: sans-serif; padding: 20px; }
+            .card { background: #1e1e1e; padding: 20px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #333; }
+            .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
+            .stat { color: #8b5cf6; font-weight: bold; }
+            h1 { color: #8b5cf6; }
+            .refresh { font-size: 0.8rem; color: #666; margin-bottom: 20px; }
+        </style>
+        <meta http-equiv="refresh" content="5">
+    </head>
+    <body>
+        <h1>📊 Live Stream Monitor</h1>
+        <div class="refresh">Auto-refreshing every 5 seconds. Active Engines: ${engines.length} / ${MAX_ENGINES}</div>
+        <div class="grid">
+            ${engines.length ? engines.map(e => `
+                <div class="card">
+                    <div><b>Engine ID:</b> ${e.id}</div>
+                    <div><b>Status:</b> ${e.ready ? '✅ Ready' : '⏳ Connecting'}</div>
+                    <div><b>Speed:</b> <span class="stat">${e.speed}</span></div>
+                    <div><b>Peers:</b> ${e.peers}</div>
+                    <div><b>Downloaded:</b> ${e.downloaded}</div>
+                    <div><b>Files:</b> ${e.files}</div>
+                    <div><b>Last Activity:</b> ${e.lastAccess}</div>
+                </div>
+            `).join('') : '<div class="card">No active streams. Start watching something in Stremio!</div>'}
+        </div>
+        <div style="margin-top: 30px;"><a href="/" style="color: #666; font-size: 0.9rem;">← Back to Landing Page</a></div>
+    </body>
+    </html>
+    `);
+});
 // ─── Landing Page ────────────────────────────────────────
 app.get('/', (req, res) => {
     const host = req.get('host') || 'stremio-addon-lg01.onrender.com';
@@ -139,6 +188,9 @@ app.get('/', (req, res) => {
                 This exclusive Stremio addon proxies massive 4K & HD torrents through a high-speed cloud server, completely eliminating buffering and stuttering on low-end devices.
             </p>
             <a href="${installUrl}" class="btn">🚀 Install in Stremio</a>
+            <div style="margin-top: 15px;">
+                <a href="/dashboard" style="color: #8b5cf6; text-decoration: none; font-size: 0.9rem;">📊 Live Stream Monitor</a>
+            </div>
             
             <div class="features">
                 <div class="feature">⚡ Cloud Proxy</div>
