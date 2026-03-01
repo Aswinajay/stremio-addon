@@ -378,17 +378,18 @@ function getOrCreateEngine(infoHash) {
         }
     }, 5000);
 
-    // Global zombie scan: kill stalled engines every 2 minutes
+    // Global zombie scan: kill stalled engines every 90s
     if (!global._zombieScannerStarted) {
         global._zombieScannerStarted = true;
         setInterval(() => {
+            const zombieAge = ZOMBIE_TIMEOUT / 1000;
             for (const [hash, e] of Object.entries(activeEngines)) {
                 if (e.activeStreams === 0 && e.lastNonZeroSpeed && (Date.now() - e.lastNonZeroSpeed > ZOMBIE_TIMEOUT)) {
-                    console.log(`[Zombie] Killing stalled engine ${hash.substring(0, 8)}… (0 MB/s for 90s)`);
+                    console.log(`[Zombie] Killing stalled engine ${hash.substring(0, 8)}… (0 MB/s for ${zombieAge}s)`);
                     destroyEngine(hash);
                 }
             }
-        }, 2 * 60 * 1000);
+        }, 90 * 1000);
     }
 
     // Mark ready when the engine fires 'ready'
