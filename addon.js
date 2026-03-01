@@ -11,9 +11,9 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.8.6',
+    version: '2.9.0',
     name: 'Render Torrent Stream',
-    description: 'Stream from 30+ massive sources (Official Torrentio, YTS, Indian, SolidTorrents, Nyaa, Bitsearch, TPB) — 100% buffer-free',
+    description: 'Stream from 30+ massive sources (4K/1080p Prioritized) — 100% buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
@@ -44,7 +44,7 @@ function formatSize(bytes) {
 
 function parseQuality(title) {
     if (!title) return '?';
-    const m = title.match(/(2160p|4K|1080p|720p|480p|HDRip|BDRip|WEB-?DL|WEB-?Rip|BluRay|HDTV)/i);
+    const m = title.match(/(2160p|4K|UHD|1080p|720p|480p|CAM|TS|TELESYNC|HDRip|BDRip|WEB-?DL|WEB-?Rip|BluRay|HDTV)/i);
     return m ? m[1].toUpperCase() : '?';
 }
 
@@ -442,18 +442,22 @@ async function tpbHDSeriesSearch(showName, season, episode) {
 
 // ─── Dedup + Build Streams ───────────────────────────────
 const QUALITY_RANKS = {
-    '2160P': 6,
-    '4K': 6,
-    '1080P': 5,
-    '720P': 4,
-    '480P': 3,
-    'HDRIP': 2,
-    'BDRIP': 2,
-    'WEBRIP': 2,
-    'WEB-DL': 2,
-    'BLURAY': 2,
-    'HDTV': 2,
-    '?': 1
+    '2160P': 7,
+    '4K': 7,
+    'UHD': 7,
+    '1080P': 6,
+    '720P': 5,
+    '480P': 4,
+    'BDRIP': 3,
+    'HDRIP': 3,
+    'WEBRIP': 3,
+    'WEB-DL': 3,
+    'BLURAY': 3,
+    'HDTV': 3,
+    '?': 1,
+    'CAM': 0,
+    'TS': 0,
+    'TELESYNC': 0
 };
 
 function getQualityRank(qualityStr) {
