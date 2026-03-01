@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: render-torrent-stream
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
