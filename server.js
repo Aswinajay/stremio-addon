@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.18',
+        version: '3.5.19',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
@@ -220,10 +220,14 @@ const activeEngines = {};
 
 function getDynamicLimits() {
     const ram = getRamUsageMB();
-    if (ram > 180) return { connections: 15, mode: 'CRITICAL' };
+    // Ultra-granular scaling reaching down to 1 connection in emergency
+    if (ram > 195) return { connections: 1, mode: 'EMERGENCY' };
+    if (ram > 185) return { connections: 5, mode: 'CRITICAL' };
+    if (ram > 170) return { connections: 15, mode: 'SEVERE' };
     if (ram > 150) return { connections: 25, mode: 'LOW' };
-    if (ram > 100) return { connections: 40, mode: 'BALANCED' };
-    return { connections: 55, mode: 'HIGH' };
+    if (ram > 120) return { connections: 35, mode: 'MEDIUM' };
+    if (ram > 100) return { connections: 45, mode: 'BALANCED' };
+    return { connections: 60, mode: 'HIGH' };
 }
 
 function getRamUsageMB() {
