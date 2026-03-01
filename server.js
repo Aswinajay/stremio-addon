@@ -52,6 +52,105 @@ app.get('/debug', async (_req, res) => {
     res.json({ version: '1.4.0', results });
 });
 
+// ─── Landing Page ────────────────────────────────────────
+app.get('/', (req, res) => {
+    const host = req.get('host') || 'stremio-addon-lg01.onrender.com';
+    const installUrl = `stremio://${host}/manifest.json`;
+
+    res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Buffer-Free Stremio Addon</title>
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                background-color: #121212;
+                color: #ffffff;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                text-align: center;
+            }
+            .container {
+                max-width: 600px;
+                padding: 40px;
+                background: linear-gradient(145deg, #1e1e1e, #141414);
+                border-radius: 20px;
+                box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+                border: 1px solid #333;
+            }
+            h1 {
+                margin-top: 0;
+                font-size: 2.5rem;
+                background: -webkit-linear-gradient(45deg, #8a2be2, #4b0082);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            p {
+                font-size: 1.1rem;
+                line-height: 1.6;
+                color: #b3b3b3;
+                margin-bottom: 30px;
+            }
+            .btn {
+                display: inline-block;
+                background-color: #8b5cf6;
+                color: white;
+                text-decoration: none;
+                padding: 15px 40px;
+                font-size: 1.2rem;
+                font-weight: bold;
+                border-radius: 50px;
+                transition: transform 0.2s, background-color 0.2s, box-shadow 0.2s;
+                box-shadow: 0 5px 15px rgba(139, 92, 246, 0.4);
+            }
+            .btn:hover {
+                transform: translateY(-2px);
+                background-color: #7c3aed;
+                box-shadow: 0 8px 20px rgba(139, 92, 246, 0.6);
+            }
+            .features {
+                display: flex;
+                justify-content: center;
+                gap: 20px;
+                margin-top: 30px;
+            }
+            .feature {
+                background: #2a2a2a;
+                padding: 10px 20px;
+                border-radius: 10px;
+                font-size: 0.9rem;
+                color: #d1d5db;
+                border: 1px solid #3d3d3d;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Buffer-Free Server</h1>
+            <p>
+                This exclusive Stremio addon proxies massive 4K & HD torrents through a high-speed cloud server, completely eliminating buffering and stuttering on low-end devices.
+            </p>
+            <a href="${installUrl}" class="btn">🚀 Install in Stremio</a>
+            
+            <div class="features">
+                <div class="feature">⚡ Cloud Proxy</div>
+                <div class="feature">🎬 TorrentsDB + YTS</div>
+                <div class="feature">🍿 Movies & Series</div>
+            </div>
+        </div>
+    </body>
+    </html>
+    `);
+});
+
 // ─── Stremio Addon SDK routes ────────────────────────────
 const addonRouter = getRouter(addonInterface);
 app.use(addonRouter);
