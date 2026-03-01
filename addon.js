@@ -17,7 +17,7 @@ const TPB_MIRRORS = [
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.5.6',
+    version: '3.5.7',
     name: 'Render Torrent Stream (Hydra+)',
     description: 'Auto-rotating Scrapers | Multi-Format Series Search | 4K HDR',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
@@ -462,7 +462,7 @@ function buildStreams(torrents, baseUrl) {
         return true;
     });
 
-    const topTorrents = filtered.slice(0, 20); // Only top 20 sorted results
+    const topTorrents = filtered.slice(0, 30); // Top 30 sorted results
 
     for (const t of topTorrents) {
         if (!t.hash || seen.has(t.hash)) continue;
@@ -496,67 +496,51 @@ builder.defineStreamHandler(async ({ type, id }) => {
 
     try {
         if (type === 'movie') {
-            const allTorrents = [];
+            // Fire ALL sources simultaneously — do NOT wait for YTS before starting others
+            // This restores the 40+ results we had in v3.4.x
+            const [
+                meta,
+                ytsResults,
+                torrentioResults,
+                tpbPlusResults,
+                cometResults,
+                mediaFusionResults,
+                jackettioResults,
+                tpbImdbResults,
+            ] = await Promise.all([
+                getMeta(id, 'movie').catch(() => null),
+                ytsImdbLookup(id).catch(() => []),
+                fetchTorrentio('movie', id).catch(() => []),
+                fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id).catch(() => []),
+                fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id).catch(() => []),
+                fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'movie', id).catch(() => []),
+                fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'movie', id).catch(() => []),
+                tpbImdbLookup(id).catch(() => []),
+            ]);
 
-            // Source 1: YTS IMDB lookup (fastest, cloud-friendly)
-            const ytsTorrents = await ytsImdbLookup(id);
-            allTorrents.push(...ytsTorrents);
+            const allTorrents = [
+                ...ytsResults,
+                ...torrentioResults,
+                ...tpbPlusResults,
+                ...cometResults,
+                ...mediaFusionResults,
+                ...jackettioResults,
+                ...tpbImdbResults,
+            ];
 
-            // Source 2: If IMDB failed, try YTS title search
-            if (allTorrents.length === 0) {
-                const meta = await getMeta(id, 'movie');
-                if (meta?.name) {
-                    const ytsSearch$ = await ytsSearch(meta.name, meta.year);
-                    allTorrents.push(...ytsSearch$);
-
-                    // Source 3-10: Meta-Scraper Fetch (Parallel)
-                    const metaScrapers = [
-                        fetchTorrentio('movie', id),
-                        fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
-                        fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
-                        fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'movie', id),
-                        fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'movie', id),
-                    ];
-
-                    const extra = await Promise.allSettled([
-                        tpbImdbLookup(id),
-                        tpbSearch(meta?.name + ' ' + (meta?.year || ''), '201,207'),
-                        solidTorrentsSearch(meta?.name + ' ' + (meta?.year || '')),
-                        btDigSearch(meta?.name + ' ' + (meta?.year || '')),
-                        bitsearchSearch(meta?.name + ' ' + (meta?.year || '')),
-                        nyaaRssSearch(meta?.name),
-                        ...metaScrapers
-                    ]);
-
-                    extra.forEach(s => {
-                        if (s.status === 'fulfilled') allTorrents.push(...s.value);
-                    });
-                }
-            } else {
-                // YTS worked, still try everything else for more options
-                const meta = await getMeta(id, 'movie');
-                if (meta?.name) {
-                    try {
-                        const metaScrapers = [
-                            fetchTorrentio('movie', id),
-                            fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
-                            fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
-                            fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'movie', id),
-                        ];
-                        const extra = await Promise.allSettled([
-                            tpbImdbLookup(id),
-                            tpbSearch(meta.name + ' ' + (meta.year || ''), '201,207'),
-                            tpbSearch(meta.name + ' 1080p', '201,207'),
-                            solidTorrentsSearch(meta.name + ' ' + (meta.year || '')),
-                            btDigSearch(meta.name + ' ' + (meta.year || '')),
-                            bitsearchSearch(meta.name + ' ' + (meta.year || '')),
-                            nyaaRssSearch(meta.name),
-                            ...metaScrapers
-                        ]);
-                        extra.forEach(s => {
-                            if (s.status === 'fulfilled') allTorrents.push(...s.value);
-                        });
-                    } catch (e) { /* ignore */ }
+            // Title-based searches (needs metadata, run in second parallel wave)
+            if (meta?.name) {
+                const titleResults = await Promise.allSettled([
+                    ytsSearch(meta.name, meta.year),
+                    tpbSearch(meta.name + ' ' + (meta.year || ''), '201,207'),
+                    tpbSearch(meta.name + ' 1080p', '201,207'),
+                    solidTorrentsSearch(meta.name + ' ' + (meta.year || '')),
+                    btDigSearch(meta.name + ' ' + (meta.year || '')),
+                    bitsearchSearch(meta.name + ' ' + (meta.year || '')),
+                    nyaaRssSearch(meta.name),
+                ]);
+                for (const r of titleResults) {
+                    if (r.status === 'fulfilled' && Array.isArray(r.value)) allTorrents.push(...r.value);
                 }
             }
 
