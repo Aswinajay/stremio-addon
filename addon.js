@@ -1,19 +1,13 @@
 const { addonBuilder } = require('stremio-addon-sdk');
 const axios = require('axios');
 
-// ─── API Endpoints ───────────────────────────────────────
+// ─── API Mirrors ─────────────────────────────────────────
 const YTS_MIRRORS = [
     'https://yts.torrentbay.st',
     'https://movies-api.accel.li',
 ];
-
-// TPB API — works from cloud IPs!
-const TPB_API = 'https://apibay.org';
-// TV category = 205, HD TV = 208
-const TPB_CATEGORIES = ['205', '208'];
-
-// EZTV as first-try for series (faster when not blocked)
 const EZTV_BASE = 'https://eztvx.to';
+const TPB_API = 'https://apibay.org';
 
 // ─── Trackers ────────────────────────────────────────────
 const TRACKERS = [
@@ -30,9 +24,9 @@ const TRACKERS = [
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '1.4.0',
+    version: '2.0.0',
     name: 'Render Torrent Stream',
-    description: 'Stream movies & series from torrents through Render.com — buffer-free proxy streaming',
+    description: 'Stream movies & series from 6+ torrent sources through Render.com — buffer-free proxy streaming',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
@@ -48,198 +42,255 @@ const builder = new addonBuilder(manifest);
 
 // ─── Helpers ─────────────────────────────────────────────
 function getBaseUrl() {
-    if (process.env.RENDER_EXTERNAL_URL) {
-        return process.env.RENDER_EXTERNAL_URL;
-    }
-    const port = process.env.PORT || 3000;
-    return `http://localhost:${port}`;
+    if (process.env.RENDER_EXTERNAL_URL) return process.env.RENDER_EXTERNAL_URL;
+    return `http://localhost:${process.env.PORT || 3000}`;
 }
 
 function formatSize(bytes) {
     if (!bytes) return '';
     const num = typeof bytes === 'string' ? parseInt(bytes) : bytes;
     if (isNaN(num) || num <= 0) return '';
-    const gb = num / (1024 * 1024 * 1024);
+    const gb = num / (1024 ** 3);
     if (gb >= 1) return `${gb.toFixed(2)} GB`;
-    const mb = num / (1024 * 1024);
-    return `${mb.toFixed(0)} MB`;
+    return `${(num / (1024 ** 2)).toFixed(0)} MB`;
 }
 
 function parseQuality(title) {
     if (!title) return '?';
-    const match = title.match(/(\d{3,4}p|4K|2160p)/i);
-    return match ? match[1].toUpperCase() : '?';
+    const m = title.match(/(2160p|4K|1080p|720p|480p|HDRip|BDRip|WEB-?DL|WEB-?Rip|BluRay|HDTV)/i);
+    return m ? m[1].toUpperCase() : '?';
 }
 
 const axiosOpts = {
-    timeout: 15000,
+    timeout: 12000,
     headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json',
     },
 };
 
-// ─── Get title from Cinemeta (works for movies & series) ─
-const nameCache = {};
-async function getTitle(imdbId, type = 'movie') {
-    if (nameCache[imdbId]) return nameCache[imdbId];
+// ─── Cinemeta: get title metadata ────────────────────────
+const metaCache = {};
+async function getMeta(imdbId, type = 'movie') {
+    if (metaCache[imdbId]) return metaCache[imdbId];
     try {
-        const url = `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`;
-        const r = await axios.get(url, { timeout: 10000 });
+        const r = await axios.get(`https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`, { timeout: 8000 });
         const meta = r.data?.meta;
         if (meta?.name) {
             const result = { name: meta.name, year: meta.year || meta.releaseInfo };
-            nameCache[imdbId] = result;
+            metaCache[imdbId] = result;
             return result;
         }
-    } catch (err) {
-        console.error(`[Cinemeta] Failed for ${imdbId}: ${err.message}`);
-    }
+    } catch (e) { /* ignore */ }
     return null;
 }
 
-// ─── YTS: Movies (IMDB lookup) ───────────────────────────
-async function fetchMovieTorrents(imdbId) {
+// ═══════════════════════════════════════════════════════════
+// ───  MOVIE SOURCES  ── (6 sources for movies)
+// ═══════════════════════════════════════════════════════════
+
+// 1. YTS IMDB Lookup (best quality, cloud-friendly ✅)
+async function ytsImdbLookup(imdbId) {
     for (const mirror of YTS_MIRRORS) {
         try {
             const url = `${mirror}/api/v2/movie_details.json?imdb_id=${imdbId}`;
-            console.log(`[YTS] IMDB lookup: ${url}`);
-
-            const response = await axios.get(url, axiosOpts);
-            const movie = response.data?.data?.movie;
-
-            if (!movie || !movie.torrents || movie.torrents.length === 0) {
-                continue;
+            const r = await axios.get(url, axiosOpts);
+            const movie = r.data?.data?.movie;
+            if (movie?.torrents?.length > 0) {
+                console.log(`[YTS-IMDB] ✓ ${movie.torrents.length} torrents`);
+                return movie.torrents.map(t => ({
+                    hash: t.hash?.toLowerCase(),
+                    title: movie.title_long || movie.title,
+                    quality: t.quality,
+                    codec: t.video_codec,
+                    audio: t.audio_channels,
+                    size: t.size || formatSize(t.size_bytes),
+                    seeds: t.seeds || 0,
+                    source: 'YTS',
+                })).filter(t => t.hash);
             }
-
-            console.log(`[YTS] Got ${movie.torrents.length} torrents via IMDB`);
-            return {
-                title: movie.title_long || movie.title,
-                torrents: movie.torrents,
-            };
-        } catch (err) {
-            console.error(`[YTS] ${mirror} failed: ${err.message}`);
-        }
+        } catch (e) { console.error(`[YTS-IMDB] ${mirror}: ${e.message}`); }
     }
-    return null;
+    return [];
 }
 
-// ─── YTS: Title search fallback ──────────────────────────
-async function fetchMovieByTitle(title, year) {
-    const mirror = YTS_MIRRORS[0];
+// 2. YTS Title Search (fallback for newer movies, cloud-friendly ✅)
+async function ytsSearch(title, year) {
     try {
-        let url = `${mirror}/api/v2/list_movies.json?query_term=${encodeURIComponent(title)}&limit=5`;
-        console.log(`[YTS] Title search: "${title}"`);
+        const url = `${YTS_MIRRORS[0]}/api/v2/list_movies.json?query_term=${encodeURIComponent(title)}&limit=10&sort_by=seeds`;
+        const r = await axios.get(url, axiosOpts);
+        const movies = r.data?.data?.movies;
+        if (!movies?.length) return [];
 
-        const response = await axios.get(url, axiosOpts);
-        const movies = response.data?.data?.movies;
-
-        if (!movies || movies.length === 0) {
-            console.log(`[YTS] No results for title search`);
-            return null;
-        }
-
-        // Find best match (prefer year match if available)
+        // Find best year match
         let best = movies[0];
         if (year) {
-            const yearMatch = movies.find(m => String(m.year) === String(year));
-            if (yearMatch) best = yearMatch;
+            const match = movies.find(m => String(m.year) === String(year));
+            if (match) best = match;
         }
 
-        if (!best.torrents || best.torrents.length === 0) {
-            return null;
-        }
-
-        console.log(`[YTS] Title search found: "${best.title_long}" (${best.torrents.length} torrents)`);
-        return {
+        if (!best.torrents?.length) return [];
+        console.log(`[YTS-Search] ✓ "${best.title}" (${best.year}) — ${best.torrents.length} torrents`);
+        return best.torrents.map(t => ({
+            hash: t.hash?.toLowerCase(),
             title: best.title_long || best.title,
-            torrents: best.torrents,
-        };
-    } catch (err) {
-        console.error(`[YTS] Title search failed: ${err.message}`);
-        return null;
-    }
+            quality: t.quality,
+            codec: t.video_codec,
+            audio: t.audio_channels,
+            size: t.size || formatSize(t.size_bytes),
+            seeds: t.seeds || 0,
+            source: 'YTS',
+        })).filter(t => t.hash);
+    } catch (e) { console.error(`[YTS-Search] ${e.message}`); return []; }
 }
 
-// ─── EZTV: Series (first try) ────────────────────────────
-async function fetchSeriesFromEZTV(imdbId, season, episode) {
+// 3. TPB Movie Search (blocked on some clouds ⚠️)
+async function tpbMovieSearch(title, year) {
+    try {
+        const q = year ? `${title} ${year}` : title;
+        const url = `${TPB_API}/q.php?q=${encodeURIComponent(q)}&cat=201`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const results = (r.data || []).filter(t =>
+            t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
+            t.name !== 'No results returned'
+        );
+        if (!results.length) return [];
+
+        results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
+        console.log(`[TPB-Movie] ✓ ${results.length} results`);
+        return results.slice(0, 10).map(r => ({
+            hash: r.info_hash?.toLowerCase(),
+            title: r.name,
+            size: formatSize(r.size),
+            seeds: parseInt(r.seeders) || 0,
+            source: 'TPB',
+        })).filter(t => t.hash);
+    } catch (e) { console.error(`[TPB-Movie] ${e.message}`); return []; }
+}
+
+// 4. TPB HD Movie Search (category 207 for HD)
+async function tpbHDMovieSearch(title, year) {
+    try {
+        const q = year ? `${title} ${year}` : title;
+        const url = `${TPB_API}/q.php?q=${encodeURIComponent(q)}&cat=207`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const results = (r.data || []).filter(t =>
+            t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
+            t.name !== 'No results returned'
+        );
+        if (!results.length) return [];
+
+        results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
+        console.log(`[TPB-HD] ✓ ${results.length} HD results`);
+        return results.slice(0, 10).map(r => ({
+            hash: r.info_hash?.toLowerCase(),
+            title: r.name,
+            size: formatSize(r.size),
+            seeds: parseInt(r.seeders) || 0,
+            source: 'TPB-HD',
+        })).filter(t => t.hash);
+    } catch (e) { console.error(`[TPB-HD] ${e.message}`); return []; }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ───  SERIES SOURCES  ── (3 sources for series)
+// ═══════════════════════════════════════════════════════════
+
+// 5. EZTV Episode Lookup (blocked on some clouds ⚠️)
+async function eztvSearch(imdbId, season, episode) {
     try {
         const cleanId = imdbId.replace(/^tt/, '');
         const url = `${EZTV_BASE}/api/get-torrents?imdb_id=${cleanId}&limit=100`;
-        console.log(`[EZTV] Fetching: ${url}`);
-
-        const response = await axios.get(url, { ...axiosOpts, timeout: 8000 });
-        const allTorrents = response.data?.torrents || [];
-
-        const episodeTorrents = allTorrents.filter(t =>
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const all = r.data?.torrents || [];
+        const filtered = all.filter(t =>
             String(t.season) === String(season) && String(t.episode) === String(episode)
         );
+        if (!filtered.length) return [];
 
-        console.log(`[EZTV] Found ${episodeTorrents.length}/${allTorrents.length} for S${season}E${episode}`);
-        return episodeTorrents.map(t => ({
+        console.log(`[EZTV] ✓ ${filtered.length}/${all.length} for S${season}E${episode}`);
+        return filtered.map(t => ({
             hash: t.hash?.toLowerCase(),
             title: t.title || t.filename || '',
             size: formatSize(t.size_bytes),
             seeds: t.seeds || 0,
             source: 'EZTV',
         })).filter(t => t.hash);
-    } catch (err) {
-        console.error(`[EZTV] Failed: ${err.message}`);
-        return [];
-    }
+    } catch (e) { console.error(`[EZTV] ${e.message}`); return []; }
 }
 
-// ─── TPB: Series (fallback — works from cloud!) ──────────
-async function fetchSeriesFromTPB(showName, season, episode) {
+// 6. TPB TV Search (blocked on some clouds ⚠️)
+async function tpbSeriesSearch(showName, season, episode) {
     try {
         const s = String(season).padStart(2, '0');
         const e = String(episode).padStart(2, '0');
-        const query = `${showName} S${s}E${e}`;
-        console.log(`[TPB] Searching: "${query}"`);
-
-        const url = `${TPB_API}/q.php?q=${encodeURIComponent(query)}&cat=0`;
-        const response = await axios.get(url, axiosOpts);
-        const results = response.data || [];
-
-        // Filter out "no results" placeholder
-        const validResults = results.filter(r =>
-            r.info_hash && r.info_hash !== '0000000000000000000000000000000000000000' &&
-            r.name !== 'No results returned'
+        const q = `${showName} S${s}E${e}`;
+        const url = `${TPB_API}/q.php?q=${encodeURIComponent(q)}&cat=0`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const results = (r.data || []).filter(t =>
+            t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
+            t.name !== 'No results returned'
         );
+        if (!results.length) return [];
 
-        console.log(`[TPB] Got ${validResults.length} results`);
-
-        // Sort by seeders descending
-        validResults.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
-
-        return validResults.slice(0, 15).map(r => ({
+        results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
+        console.log(`[TPB-TV] ✓ ${results.length} results for "${q}"`);
+        return results.slice(0, 15).map(r => ({
             hash: r.info_hash?.toLowerCase(),
-            title: r.name || query,
+            title: r.name,
             size: formatSize(r.size),
             seeds: parseInt(r.seeders) || 0,
             source: 'TPB',
         })).filter(t => t.hash);
-    } catch (err) {
-        console.error(`[TPB] Failed: ${err.message}`);
-        return [];
-    }
+    } catch (e) { console.error(`[TPB-TV] ${e.message}`); return []; }
 }
 
-// ─── Build dual streams (proxy + native) ─────────────────
+// 7. TPB HD TV Search (category 208)
+async function tpbHDSeriesSearch(showName, season, episode) {
+    try {
+        const s = String(season).padStart(2, '0');
+        const e = String(episode).padStart(2, '0');
+        const q = `${showName} S${s}E${e}`;
+        const url = `${TPB_API}/q.php?q=${encodeURIComponent(q)}&cat=208`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const results = (r.data || []).filter(t =>
+            t.info_hash && t.info_hash !== '0000000000000000000000000000000000000000' &&
+            t.name !== 'No results returned'
+        );
+        if (!results.length) return [];
+
+        results.sort((a, b) => parseInt(b.seeders || 0) - parseInt(a.seeders || 0));
+        console.log(`[TPB-HDTV] ✓ ${results.length} HD results`);
+        return results.slice(0, 10).map(r => ({
+            hash: r.info_hash?.toLowerCase(),
+            title: r.name,
+            size: formatSize(r.size),
+            seeds: parseInt(r.seeders) || 0,
+            source: 'TPB-HD',
+        })).filter(t => t.hash);
+    } catch (e) { console.error(`[TPB-HDTV] ${e.message}`); return []; }
+}
+
+// ─── Dedup + Build Streams ───────────────────────────────
 function buildStreams(torrents, baseUrl) {
     const streams = [];
     const seen = new Set();
+
+    // Sort by seeders (most seeders first)
+    torrents.sort((a, b) => (b.seeds || 0) - (a.seeds || 0));
 
     for (const t of torrents) {
         if (!t.hash || seen.has(t.hash)) continue;
         seen.add(t.hash);
 
-        const quality = parseQuality(t.title);
+        const quality = t.quality || parseQuality(t.title);
         let info = quality;
+        if (t.codec) info += ` ${t.codec}`;
+        if (t.audio) info += ` ${t.audio}ch`;
         if (t.size) info += ` | ${t.size}`;
         info += ` | 👤 ${t.seeds}`;
 
-        // HTTP Proxy stream (plays through Render)
+        // Render Proxy (HTTP stream)
         streams.push({
             url: `${baseUrl}/stream/${t.hash}`,
             title: `🖥️ Render Proxy | ${info}\n${t.title} | ${t.source}`,
@@ -249,7 +300,7 @@ function buildStreams(torrents, baseUrl) {
             },
         });
 
-        // Native infoHash stream (plays via Stremio's built-in torrent client)
+        // Native Torrent (Stremio built-in client)
         streams.push({
             infoHash: t.hash,
             title: `🧲 Direct Torrent | ${info}\n${t.title} | ${t.source}`,
@@ -265,86 +316,84 @@ function buildStreams(torrents, baseUrl) {
 
 // ─── Stream Handler ──────────────────────────────────────
 builder.defineStreamHandler(async ({ type, id }) => {
-    console.log(`\n[Stream Request] type=${type} id=${id}`);
+    console.log(`\n[Stream] type=${type} id=${id}`);
     const baseUrl = getBaseUrl();
 
     try {
         if (type === 'movie') {
-            // Try IMDB lookup first
-            let result = await fetchMovieTorrents(id);
+            const allTorrents = [];
 
-            // If IMDB lookup fails, try title search via Cinemeta
-            if (!result || result.torrents.length === 0) {
-                const meta = await getTitle(id, 'movie');
+            // Source 1: YTS IMDB lookup (fastest, cloud-friendly)
+            const ytsTorrents = await ytsImdbLookup(id);
+            allTorrents.push(...ytsTorrents);
+
+            // Source 2: If IMDB failed, try YTS title search
+            if (allTorrents.length === 0) {
+                const meta = await getMeta(id, 'movie');
                 if (meta?.name) {
-                    result = await fetchMovieByTitle(meta.name, meta.year);
+                    const ytsSearch$ = await ytsSearch(meta.name, meta.year);
+                    allTorrents.push(...ytsSearch$);
+
+                    // Source 3+4: TPB movie search (parallel)
+                    const [tpb, tpbHD] = await Promise.allSettled([
+                        tpbMovieSearch(meta.name, meta.year),
+                        tpbHDMovieSearch(meta.name, meta.year),
+                    ]);
+                    if (tpb.status === 'fulfilled') allTorrents.push(...tpb.value);
+                    if (tpbHD.status === 'fulfilled') allTorrents.push(...tpbHD.value);
+                }
+            } else {
+                // YTS worked, still try TPB for more options (in parallel, non-blocking)
+                const meta = await getMeta(id, 'movie');
+                if (meta?.name) {
+                    try {
+                        const [tpb, tpbHD] = await Promise.allSettled([
+                            tpbMovieSearch(meta.name, meta.year),
+                            tpbHDMovieSearch(meta.name, meta.year),
+                        ]);
+                        if (tpb.status === 'fulfilled') allTorrents.push(...tpb.value);
+                        if (tpbHD.status === 'fulfilled') allTorrents.push(...tpbHD.value);
+                    } catch (e) { /* ignore TPB errors */ }
                 }
             }
 
-            if (!result || result.torrents.length === 0) {
-                console.log('[Stream] No movie torrents found via IMDB or title search');
+            if (allTorrents.length === 0) {
+                console.log('[Stream] No movie torrents found from any source');
                 return { streams: [] };
             }
 
-            const streams = [];
-            for (const t of result.torrents) {
-                if (!t.hash) continue;
-
-                let info = `${t.quality || '?'}`;
-                if (t.video_codec) info += ` ${t.video_codec}`;
-                if (t.audio_channels) info += ` ${t.audio_channels}ch`;
-                const size = t.size || formatSize(t.size_bytes);
-                if (size) info += ` | ${size}`;
-                info += ` | 👤 ${t.seeds || 0}`;
-
-                streams.push({
-                    url: `${baseUrl}/stream/${t.hash.toLowerCase()}`,
-                    title: `🖥️ Render Proxy | ${info}\n${result.title} | YTS`,
-                    behaviorHints: {
-                        bingeGroup: `render-proxy-${t.quality}`,
-                        notWebReady: true,
-                    },
-                });
-
-                streams.push({
-                    infoHash: t.hash.toLowerCase(),
-                    title: `🧲 Direct Torrent | ${info}\n${result.title} | YTS`,
-                    sources: TRACKERS.map(tr => `tracker:${tr}`),
-                    behaviorHints: {
-                        bingeGroup: `render-native-${t.quality}`,
-                    },
-                });
-            }
-
-            console.log(`[Stream] Returning ${streams.length} movie streams`);
+            const streams = buildStreams(allTorrents, baseUrl);
+            console.log(`[Stream] → ${streams.length} movie streams (${allTorrents.length} unique torrents)`);
             return { streams };
 
         } else if (type === 'series') {
             const [imdbId, season, episode] = id.split(':');
-            if (!imdbId || !season || !episode) {
-                return { streams: [] };
-            }
+            if (!imdbId || !season || !episode) return { streams: [] };
 
-            // Try EZTV first
-            let torrents = await fetchSeriesFromEZTV(imdbId, season, episode);
+            const meta = await getMeta(imdbId, 'series');
+            const showName = meta?.name;
 
-            // If EZTV fails, use TPB API (cloud-friendly!)
-            if (torrents.length === 0) {
-                const meta = await getTitle(imdbId, 'series');
-                if (meta?.name) {
-                    torrents = await fetchSeriesFromTPB(meta.name, season, episode);
-                } else {
-                    console.log(`[Stream] Could not determine show name for ${imdbId}`);
+            // Query ALL series sources in parallel
+            const sources = await Promise.allSettled([
+                eztvSearch(imdbId, season, episode),
+                showName ? tpbSeriesSearch(showName, season, episode) : Promise.resolve([]),
+                showName ? tpbHDSeriesSearch(showName, season, episode) : Promise.resolve([]),
+            ]);
+
+            const allTorrents = [];
+            for (const s of sources) {
+                if (s.status === 'fulfilled' && s.value.length > 0) {
+                    allTorrents.push(...s.value);
                 }
             }
 
-            if (torrents.length === 0) {
-                console.log('[Stream] No series torrents found');
+            if (allTorrents.length === 0) {
+                console.log(`[Stream] No series torrents found for ${showName || imdbId} S${season}E${episode}`);
                 return { streams: [] };
             }
 
-            const streams = buildStreams(torrents, baseUrl);
-            console.log(`[Stream] Returning ${streams.length} series streams`);
+            const streams = buildStreams(allTorrents, baseUrl);
+            console.log(`[Stream] → ${streams.length} series streams (${allTorrents.length} unique torrents)`);
             return { streams };
         }
 
