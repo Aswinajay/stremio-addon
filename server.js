@@ -250,17 +250,15 @@ app.get('/stream/:infoHash', (req, res) => {
 
     const { engine, isReady } = getOrCreateEngine(infoHash);
 
-    req.on('close', () => {
-        console.log(`[Stream] Client disconnected: ${infoHash.substring(0, 8)}…`);
-    });
+    // Prevent MaxListeners warning — multiple concurrent requests to same engine
+    engine.setMaxListeners(30);
 
     // If engine is already ready (cached), serve immediately
     if (isReady && engine.files && engine.files.length > 0) {
-        console.log(`[Stream] Engine already ready, serving immediately`);
+        console.log(`[Stream] Engine cached & ready, serving immediately`);
         const file = findVideoFile(engine.files, fileIdx);
 
         if (!file) {
-            console.error(`[Stream] No video file found in cached torrent`);
             res.status(404).json({ error: 'No video file found in this torrent' });
             return;
         }
@@ -270,41 +268,62 @@ app.get('/stream/:infoHash', (req, res) => {
         return;
     }
 
-    // Engine is new, wait for 'ready' event
+    // Engine is new — wait for 'ready' event
     let responded = false;
 
-    engine.on('ready', () => {
+    const onReady = () => {
         if (responded) return;
         responded = true;
+        clearTimeout(timer);
+        engine.removeListener('error', onError);
 
         const file = findVideoFile(engine.files, fileIdx);
-
         if (!file) {
-            console.error(`[Stream] No video file found in torrent ${infoHash.substring(0, 8)}…`);
             res.status(404).json({ error: 'No video file found in this torrent' });
             return;
         }
 
         console.log(`[Stream] Serving: "${file.name}" (${(file.length / 1024 / 1024).toFixed(1)} MB)`);
         serveVideoFile(file, req, res, infoHash);
-    });
+    };
 
-    engine.on('error', (err) => {
+    const onError = (err) => {
         console.error(`[Engine Error] ${err.message}`);
         if (!responded) {
             responded = true;
-            res.status(500).json({ error: 'Failed to initialize torrent' });
+            clearTimeout(timer);
+            engine.removeListener('ready', onReady);
+            if (!res.headersSent) res.status(500).json({ error: 'Torrent engine error' });
         }
-    });
+    };
 
-    // Timeout: if torrent doesn't connect, give up
-    setTimeout(() => {
+    // Use once() to auto-remove after firing, preventing listener leak
+    engine.once('ready', onReady);
+    engine.once('error', onError);
+
+    // Timeout
+    const timer = setTimeout(() => {
         if (!responded) {
             responded = true;
-            console.error(`[Stream] Timeout (${CONNECT_TIMEOUT / 1000}s) for torrent: ${infoHash.substring(0, 8)}…`);
-            res.status(504).json({ error: 'Torrent connection timed out — try a different quality or torrent with more seeders' });
+            engine.removeListener('ready', onReady);
+            engine.removeListener('error', onError);
+            console.error(`[Stream] Timeout (${CONNECT_TIMEOUT / 1000}s): ${infoHash.substring(0, 8)}…`);
+            if (!res.headersSent) {
+                res.status(504).json({ error: 'Torrent timed out — try a lower quality with more seeders' });
+            }
         }
     }, CONNECT_TIMEOUT);
+
+    // Clean up if client disconnects early
+    req.on('close', () => {
+        if (!responded) {
+            responded = true;
+            clearTimeout(timer);
+            engine.removeListener('ready', onReady);
+            engine.removeListener('error', onError);
+        }
+        console.log(`[Stream] Client disconnected: ${infoHash.substring(0, 8)}…`);
+    });
 });
 
 // ─── Start Server ────────────────────────────────────────
