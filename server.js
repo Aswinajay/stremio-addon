@@ -14,10 +14,41 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
+        version: '1.2.0',
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
         uptime: process.uptime(),
     });
+});
+
+// ─── Debug: test API connectivity ────────────────────────
+const axios = require('axios');
+app.get('/debug', async (_req, res) => {
+    const results = {};
+
+    // Test YTS
+    for (const mirror of ['https://yts.torrentbay.st', 'https://movies-api.accel.li', 'https://yts.autos']) {
+        try {
+            const url = `${mirror}/api/v2/movie_details.json?imdb_id=tt1375666`;
+            const r = await axios.get(url, { timeout: 10000 });
+            const torrents = r.data?.data?.movie?.torrents?.length || 0;
+            results[mirror] = { status: 'ok', torrents };
+        } catch (err) {
+            results[mirror] = { status: 'error', message: err.message, code: err.response?.status };
+        }
+    }
+
+    // Test EZTV
+    try {
+        const url = 'https://eztvx.to/api/get-torrents?imdb_id=0944947&limit=5';
+        const r = await axios.get(url, { timeout: 10000 });
+        const torrents = r.data?.torrents?.length || 0;
+        results['eztv'] = { status: 'ok', torrents };
+    } catch (err) {
+        results['eztv'] = { status: 'error', message: err.message, code: err.response?.status };
+    }
+
+    res.json({ version: '1.2.0', results });
 });
 
 // ─── Stremio Addon SDK routes ────────────────────────────
