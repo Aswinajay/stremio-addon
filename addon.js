@@ -214,29 +214,22 @@ async function solidTorrentsSearch(q) {
     return [];
 }
 
-// 4.65 TorrentGalaxy RSS Search
-async function torrentGalaxySearch(q) {
-    try {
-        const url = `https://torrentgalaxy.to/rss?search=${encodeURIComponent(q)}&cat=3`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
-        const xml = r.data || '';
-        const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
-        if (!items.length) return [];
-
-        const results = items.map(item => {
-            const title = item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/)?.[1] ||
-                item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || 'Unknown';
-            const magnet = item.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{32,40})/i)?.[1]?.toLowerCase();
-            const seedsStr = item.match(/<seeders>([\d]+)<\/seeders>/)?.[1] ||
-                item.match(/Seeds:\s*(\d+)/i)?.[1] || '0';
-            return { hash: magnet, title, seeds: parseInt(seedsStr), source: 'TGalaxy' };
-        }).filter(t => t.hash);
-
-        if (!results.length) return [];
-        results.sort((a, b) => b.seeds - a.seeds);
-        console.log(`[TorrentGalaxy] ✓ ${results.length} results`);
-        return results.slice(0, 10);
-    } catch (e) { console.error(`[TorrentGalaxy] ${e.message}`); return []; }
+// 4.65 BTDig Search (replaces TorrentGalaxy which is DNS-blocked on Render)
+async function btDigSearch(q) {
+    const mirrors = ['https://btdig.com', 'https://btdigg.xyz'];
+    for (const mirror of mirrors) {
+        try {
+            const url = `${mirror}/search?q=${encodeURIComponent(q)}&p=0&order=0`;
+            const r = await axios.get(url, { ...axiosOpts, timeout: 8000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const html = r.data || '';
+            const magnets = html.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{32,40})/gi) || [];
+            const hashes = [...new Set(magnets.map(m => m.split('btih:')[1].toLowerCase()))];
+            if (!hashes.length) continue;
+            console.log(`[BTDig] ✓ ${hashes.length} results via ${mirror}`);
+            return hashes.slice(0, 8).map(h => ({ hash: h, title: q, seeds: 1, source: 'BTDig' }));
+        } catch (e) { continue; }
+    }
+    return [];
 }
 
 // 4.7 Nyaa RSS Search (Direct Anime Scraper)
@@ -587,7 +580,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
                         tpbImdbLookup(id),
                         tpbMovieSearch(meta?.name, meta?.year),
                         solidTorrentsSearch(meta?.name + ' ' + (meta?.year || '')),
-                        torrentGalaxySearch(meta?.name + ' ' + (meta?.year || '')),
+                        btDigSearch(meta?.name + ' ' + (meta?.year || '')),
                         bitsearchSearch(meta?.name + ' ' + (meta?.year || '')),
                         nyaaRssSearch(meta?.name),
                         ...metaScrapers
@@ -613,7 +606,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
                             tpbMovieSearch(meta.name, meta.year),
                             tpbHDMovieSearch(meta.name, meta.year),
                             solidTorrentsSearch(meta.name + ' ' + (meta.year || '')),
-                            torrentGalaxySearch(meta.name + ' ' + (meta.year || '')),
+                            btDigSearch(meta.name + ' ' + (meta.year || '')),
                             bitsearchSearch(meta.name + ' ' + (meta.year || '')),
                             nyaaRssSearch(meta.name),
                             ...metaScrapers

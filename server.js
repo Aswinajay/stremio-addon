@@ -212,8 +212,8 @@ app.use(addonRouter);
 // ─── Torrent Engine Management ───────────────────────────
 const MAX_ENGINES = 3;
 const ENGINE_TIMEOUT = 10 * 60 * 1000; // 10 min idle
-const CONNECT_TIMEOUT = 60000; // 60s to connect to torrent
-const ZOMBIE_TIMEOUT = 90 * 1000; // 90s at 0 speed with no active streams = Zombie
+const CONNECT_TIMEOUT = 120000; // 120s to connect to torrent (Render cold peers are slow)
+const ZOMBIE_TIMEOUT = 3 * 60 * 1000; // 3 min at 0 speed with no active streams = Zombie
 const activeEngines = {};
 
 function getTrackers() {
