@@ -14,10 +14,12 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.2.0',
+        version: '3.4.0',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
+        ramUsageMB: getRamUsageMB(),
+        ramLimitMB: RAM_LIMIT_MB,
         uptime: process.uptime(),
     });
 });
@@ -50,7 +52,7 @@ app.get('/debug', async (_req, res) => {
     } catch (err) {
         results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-    res.json({ version: '3.2.0', results });
+    res.json({ version: '3.4.0', results });
 });
 
 // ─── Dashboard ───────────────────────────────────────────
@@ -210,11 +212,16 @@ const addonRouter = getRouter(addonInterface);
 app.use(addonRouter);
 
 // ─── Torrent Engine Management ───────────────────────────
-const MAX_ENGINES = 3;
-const ENGINE_TIMEOUT = 10 * 60 * 1000; // 10 min idle
-const CONNECT_TIMEOUT = 120000; // 120s to connect to torrent (Render cold peers are slow)
-const ZOMBIE_TIMEOUT = 3 * 60 * 1000; // 3 min at 0 speed with no active streams = Zombie
+const MAX_ENGINES = 6;           // Soft cap — RAM check enforces the real limit
+const RAM_LIMIT_MB = 400;        // Evict idle engines above this heap usage
+const ENGINE_TIMEOUT = 10 * 60 * 1000;
+const CONNECT_TIMEOUT = 120000;
+const ZOMBIE_TIMEOUT = 3 * 60 * 1000;
 const activeEngines = {};
+
+function getRamUsageMB() {
+    return Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+}
 
 function getTrackers() {
     // Source: ngosang/trackerslist (best + all_udp + all_https) — March 2025
@@ -313,21 +320,27 @@ function buildMagnet(infoHash) {
 
 function evictIfNeeded() {
     const keys = Object.keys(activeEngines);
-    if (keys.length < MAX_ENGINES) return;
+    const ramMB = getRamUsageMB();
+    const overRam = ramMB > RAM_LIMIT_MB;
+    const overCap = keys.length >= MAX_ENGINES;
 
-    // Prefer evicting ZOMBIE engines (0 speed, 0 active streams) first
+    if (!overRam && !overCap) return; // All good, no need to evict
+
+    const reason = overRam ? `RAM ${ramMB}MB > ${RAM_LIMIT_MB}MB limit` : `engine cap (${keys.length}/${MAX_ENGINES})`;
+    console.log(`[Engine] Eviction triggered: ${reason}`);
+
+    // Priority 1: Zombie engines (0 speed, 0 active streams)
     const zombie = keys.find(k => {
         const e = activeEngines[k];
         return e.activeStreams === 0 && e.lastNonZeroSpeed && (Date.now() - e.lastNonZeroSpeed > ZOMBIE_TIMEOUT);
     });
-
     if (zombie) {
-        console.log(`[Engine] Evicting ZOMBIE engine: ${zombie.substring(0, 8)}… (0 speed for 90s)`);
+        console.log(`[Engine] Evicting ZOMBIE: ${zombie.substring(0, 8)}…`);
         destroyEngine(zombie);
         return;
     }
 
-    // Fallback: evict the oldest accessed engine
+    // Priority 2: Oldest idle engine (no active streams)
     let oldest = null;
     let oldestTime = Infinity;
     for (const key of keys) {
@@ -339,6 +352,21 @@ function evictIfNeeded() {
     if (oldest) {
         console.log(`[Engine] Evicting oldest idle engine: ${oldest.substring(0, 8)}…`);
         destroyEngine(oldest);
+        return;
+    }
+
+    // Priority 3 (last resort): Evict slowest engine even if it has active streams
+    if (overRam) {
+        let slowest = null;
+        let slowestSpeed = Infinity;
+        for (const key of keys) {
+            const avg = activeEngines[key].speedSamples?.reduce((a, b) => a + b, 0) / (activeEngines[key].speedSamples?.length || 1);
+            if (avg < slowestSpeed) { slowestSpeed = avg; slowest = key; }
+        }
+        if (slowest) {
+            console.log(`[Engine] ⚠️ RAM critical — evicting slowest engine: ${slowest.substring(0, 8)}… (avg ${slowestSpeed.toFixed(2)} MB/s)`);
+            destroyEngine(slowest);
+        }
     }
 }
 

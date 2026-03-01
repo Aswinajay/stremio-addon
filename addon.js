@@ -11,9 +11,9 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.0.0',
-    name: 'Render Torrent Stream (Nitro)',
-    description: 'Stream from 30+ sources (qBittorrent Spoofing + 50 Conns Ultra-Speed) — 100% buffer-free',
+    version: '3.4.0',
+    name: 'Render Torrent Stream (v3.4)',
+    description: 'RAM-aware dynamic engines (up to 6) | 80+ trackers | 4K priority | buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
