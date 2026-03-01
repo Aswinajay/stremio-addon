@@ -11,9 +11,9 @@ const TPB_API = 'https://apibay.org';
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '2.5.0',
+    version: '2.6.0',
     name: 'Render Torrent Stream',
-    description: 'Stream from 25+ massive sources (1337x, YTS, Indian, SolidTorrents, TPB, Nyaa, Bitsearch) — 100% buffer-free',
+    description: 'Stream from 30+ absolute massive sources (Torrentio, YTS, Indian: TamilMV/TamilBlasters, Nyaa, EZTV, SolidTorrents, TPB) — 100% buffer-free',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Stremio_-_icon.svg/1200px-Stremio_-_icon.svg.png',
     types: ['movie', 'series'],
     resources: ['stream'],
@@ -198,12 +198,22 @@ async function solidTorrentsSearch(q) {
     } catch (e) { console.error(`[SolidTorrents] ${e.message}`); return []; }
 }
 
-// 4.7 Nyaa Search (Anime specialist)
-async function nyaaSearch(q) {
+// 4.7 Nyaa RSS Search (Direct Anime Scraper)
+async function nyaaRssSearch(q) {
     try {
-        // Nyaa doesn't have a great open API, but we can hit it via MediaFusion (which we already do)
-        // or a direct scraper if we want. For now, hitting it via MediaFusion's specialized indexer.
-        return fetchStremioAddon('Nyaa-Anime', 'https://mediafusion.elfhosted.com/indexers=nyaasi', 'movie', q);
+        const url = `https://nyaa.si/?page=rss&q=${encodeURIComponent(q)}&c=1_0&f=0`;
+        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
+        const items = r.data.match(/<item>[\s\S]*?<\/item>/g) || [];
+        if (!items.length) return [];
+
+        console.log(`[Nyaa-RSS] ✓ ${items.length} titles found for ${q}`);
+        return items.map(item => {
+            const title = item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || 'Unknown';
+            const hash = item.match(/<nyaa:infoHash>([\s\S]*?)<\/nyaa:infoHash>/)?.[1]?.toLowerCase();
+            const size = item.match(/<nyaa:size>([\s\S]*?)<\/nyaa:size>/)?.[1] || '';
+            const seeds = item.match(/<nyaa:seeders>([\s\S]*?)<\/nyaa:seeders>/)?.[1] || '0';
+            return { hash, title, size, seeds: parseInt(seeds), source: 'Nyaa' };
+        }).filter(t => t.hash);
     } catch (e) { return []; }
 }
 
@@ -233,45 +243,50 @@ async function tpbImdbLookup(imdbId) {
 // ───  META SOURCES (Torrentio as scraper)
 // ═══════════════════════════════════════════════════════════
 
-// 5. TorrentsDB Proxy (Torrentio fork, scrapes 1337x, RARBG, etc. No cloudflare block)
+// 5. Torrentio Scraper (Primary source for 1337x, RARBG, TorrentGalaxy, etc)
 async function fetchTorrentio(type, id) {
-    try {
-        // Use TorrentsDB directly, it has the same stream catalog as Torrentio but no Cloudflare block
-        const url = `https://torrentsdb.com/stream/${type}/${id}.json`;
-        const r = await axios.get(url, { ...axiosOpts, timeout: 8000 });
-        const streams = r.data?.streams || [];
-        if (!streams.length) return [];
+    // Try Official Torrentio first, then TorrentsDB mirror
+    const baseUrls = [
+        'https://torrentio.strem.fun',
+        'https://torrentsdb.com',
+        'https://torrentio.viren070.me'
+    ];
 
-        console.log(`[TorrentsDB] ✓ ${streams.length} streams for ${id}`);
-        return streams.map(s => {
-            const lines = s.title ? s.title.split('\n') : [];
-            const qualityMatch = s.name?.match(/(?:Torrentio|TorrentsDB)\s+(.+)/i);
-            const quality = qualityMatch ? qualityMatch[1] : '?';
+    for (const baseUrl of baseUrls) {
+        try {
+            const url = `${baseUrl}/stream/${type}/${id}.json`;
+            const r = await axios.get(url, { ...axiosOpts, timeout: 6000 });
+            const streams = r.data?.streams || [];
+            if (!streams.length) continue;
 
-            // Extract size and seeds from title if possible
-            let size = '';
-            let seeds = 0;
-            const sizeMatch = s.title?.match(/💾\s*([^👥]+)/);
-            if (sizeMatch) size = sizeMatch[1].trim();
-            const seedsMatch = s.title?.match(/👤\s*(\d+)/);
-            if (seedsMatch) seeds = parseInt(seedsMatch[1]);
+            console.log(`[Torrentio-${baseUrl.includes('strem.fun') ? 'Official' : 'Mirror'}] ✓ ${streams.length} streams`);
+            return streams.map(s => {
+                const lines = s.title ? s.title.split('\n') : [];
+                const qualityMatch = s.name?.match(/(?:Torrentio|TorrentsDB)\s+(.+)/i);
+                const quality = qualityMatch ? qualityMatch[1] : '?';
 
-            const title = lines.length > 2 ? lines[2].trim() : lines.join(' ');
-            const source = lines.length > 0 ? `TorrentsDB ${lines[0].trim()}` : 'TorrentsDB';
+                let size = '';
+                let seeds = 0;
+                const sizeMatch = s.title?.match(/💾\s*([^👥👤\n]+)/);
+                if (sizeMatch) size = sizeMatch[1].trim();
+                const seedsMatch = s.title?.match(/[👤👥]\s*(\d+)/);
+                if (seedsMatch) seeds = parseInt(seedsMatch[1]);
 
-            return {
-                hash: s.infoHash?.toLowerCase(),
-                title: title,
-                quality: quality,
-                size: size,
-                seeds: seeds,
-                source: source,
-            };
-        }).filter(t => t.hash);
-    } catch (e) {
-        console.error(`[TorrentsDB Error] ${e.message}`);
-        return [];
+                const title = lines.length > 2 ? lines[2].trim() : lines.join(' ');
+                const source = lines.length > 0 ? `Tio ${lines[0].trim()}` : 'Torrentio';
+
+                return {
+                    hash: s.infoHash?.toLowerCase(),
+                    title: title,
+                    quality: quality,
+                    size: size,
+                    seeds: seeds,
+                    source: source,
+                };
+            }).filter(t => t.hash);
+        } catch (e) { continue; }
     }
+    return [];
 }
 
 // 6. Generic Stremio Addon Fetcher (Proxy to TPB+, Comet, etc)
@@ -479,10 +494,8 @@ builder.defineStreamHandler(async ({ type, id }) => {
                     // Source 3-10: Meta-Scraper Fetch (Parallel)
                     const metaScrapers = [
                         fetchTorrentio('movie', id),
-                        fetchStremioAddon('Torrentio-Backup', 'https://torrentio.viren070.me', 'movie', id),
                         fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
                         fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
-                        fetchStremioAddon('MediaFusion-All', 'https://mediafusion.elfhosted.com/all-indexers', 'movie', id),
                         fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'movie', id),
                         fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'movie', id),
                     ];
@@ -491,6 +504,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
                         tpbImdbLookup(id),
                         tpbMovieSearch(meta?.name, meta?.year),
                         solidTorrentsSearch(meta?.name + ' ' + (meta?.year || '')),
+                        nyaaRssSearch(meta?.name), // Anime search
                         ...metaScrapers
                     ]);
 
@@ -505,10 +519,8 @@ builder.defineStreamHandler(async ({ type, id }) => {
                     try {
                         const metaScrapers = [
                             fetchTorrentio('movie', id),
-                            fetchStremioAddon('Torrentio-Backup', 'https://torrentio.viren070.me', 'movie', id),
                             fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id),
                             fetchStremioAddon('Comet', 'https://comet.elfhosted.com/indexers=torrentio', 'movie', id),
-                            fetchStremioAddon('MediaFusion-All', 'https://mediafusion.elfhosted.com/all-indexers', 'movie', id),
                             fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'movie', id),
                         ];
                         const extra = await Promise.allSettled([
@@ -516,6 +528,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
                             tpbMovieSearch(meta.name, meta.year),
                             tpbHDMovieSearch(meta.name, meta.year),
                             solidTorrentsSearch(meta.name + ' ' + (meta.year || '')),
+                            nyaaRssSearch(meta.name),
                             ...metaScrapers
                         ]);
                         extra.forEach(s => {
@@ -544,13 +557,12 @@ builder.defineStreamHandler(async ({ type, id }) => {
             const sources = await Promise.allSettled([
                 eztvSearch(imdbId, season, episode),
                 fetchTorrentio('series', id),
-                fetchStremioAddon('Torrentio-Backup', 'https://torrentio.viren070.me', 'series', id),
                 fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'series', id),
                 fetchStremioAddon('MediaFusion-Indian', 'https://mediafusion.elfhosted.com/indexers=tamilblasters%7Ctamilmv%7Conlinemoviesgold%7Ctorrentio', 'series', id),
-                fetchStremioAddon('MediaFusion-All', 'https://mediafusion.elfhosted.com/all-indexers', 'series', id),
                 fetchStremioAddon('Jackettio', 'https://stremio-jackett.elfhosted.com/indexers=torrentio', 'series', id),
                 tpbImdbLookup(imdbId),
-                solidTorrentsSearch(showName + ' S0' + season),
+                solidTorrentsSearch(showName + ' S' + season.padStart(2, '0')),
+                nyaaRssSearch(showName),
                 showName ? tpbSeriesSearch(showName, season, episode) : Promise.resolve([]),
                 showName ? tpbHDSeriesSearch(showName, season, episode) : Promise.resolve([]),
             ]);
