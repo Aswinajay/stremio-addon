@@ -70,6 +70,21 @@ builder.defineStreamHandler(async ({ type, id }) => {
     }
 });
 
+builder.defineCatalogHandler(async ({ type, id }) => {
+    console.log('[addon] catalog request:', type, id);
+    if (type === 'movie' && id === 'top') {
+        try {
+            // Forward Cinemeta's top movies so the addon's home board populates with items
+            const res = await axios.get('https://cinemeta-catalogs.strem.io/top/catalog/movie/top.json', { timeout: 10000 });
+            return { metas: res.data.metas || [] };
+        } catch (e) {
+            console.error('[addon] Catalog fetch failed', e.message);
+            return { metas: [] };
+        }
+    }
+    return { metas: [] };
+});
+
 module.exports = {
     addonInterface: builder.getInterface(),
     setHost
