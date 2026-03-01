@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.11',
+        version: '3.5.12',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: MAX_ENGINES,
@@ -397,7 +397,16 @@ function resetEngineTimeout(infoHash) {
     if (!entry) return;
     entry.lastAccess = Date.now();
     clearTimeout(entry.timeout);
-    entry.timeout = setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT);
+
+    // Dynamic Timeout: 10 mins if actively watching, but only 45 seconds if abandoned (0 active streams)
+    const duration = entry.activeStreams > 0 ? ENGINE_TIMEOUT : 45 * 1000;
+
+    entry.timeout = setTimeout(() => {
+        if (entry.activeStreams === 0 && duration < ENGINE_TIMEOUT) {
+            console.log(`[Engine] Terminated abandoned stream ${infoHash.substring(0, 8)}… (0 active streams for 45s)`);
+        }
+        destroyEngine(infoHash);
+    }, duration);
 }
 
 function getOrCreateEngine(infoHash) {
@@ -427,8 +436,10 @@ function getOrCreateEngine(infoHash) {
         activeStreams: 0,
         lastAccess: Date.now(),
         createdAt: Date.now(),
-        timeout: setTimeout(() => destroyEngine(infoHash), ENGINE_TIMEOUT),
     };
+
+    activeEngines[infoHash] = entry;
+    resetEngineTimeout(infoHash);
 
     // ─── Dynamic Speed Manager ───────────────────────────
     entry.lastNonZeroSpeed = Date.now();
