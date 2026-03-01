@@ -14,10 +14,10 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.17',
+        version: '3.5.18',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
-        maxEngines: getDynamicLimits().maxEngines,
+        maxEngines: 'Unlimited',
         ramUsageMB: getRamUsageMB(),
         ramLimitMB: RAM_LIMIT_MB,
         uptime: process.uptime(),
@@ -220,10 +220,10 @@ const activeEngines = {};
 
 function getDynamicLimits() {
     const ram = getRamUsageMB();
-    if (ram > 180) return { maxEngines: 1, connections: 15, mode: 'CRITICAL' };
-    if (ram > 150) return { maxEngines: 2, connections: 25, mode: 'LOW' };
-    if (ram > 100) return { maxEngines: 3, connections: 40, mode: 'BALANCED' };
-    return { maxEngines: 4, connections: 55, mode: 'HIGH' };
+    if (ram > 180) return { connections: 15, mode: 'CRITICAL' };
+    if (ram > 150) return { connections: 25, mode: 'LOW' };
+    if (ram > 100) return { connections: 40, mode: 'BALANCED' };
+    return { connections: 55, mode: 'HIGH' };
 }
 
 function getRamUsageMB() {
@@ -328,14 +328,11 @@ function buildMagnet(infoHash) {
 function evictIfNeeded() {
     const keys = Object.keys(activeEngines);
     const ramMB = getRamUsageMB();
-    const limits = getDynamicLimits();
-
     const overRam = ramMB > RAM_LIMIT_MB;
-    const overCap = keys.length >= limits.maxEngines;
 
-    if (!overRam && !overCap) return; // All good, no need to evict
+    if (!overRam) return; // Only evict if RAM is low
 
-    const reason = overRam ? `RAM ${ramMB}MB > ${RAM_LIMIT_MB}MB limit` : `dynamic engine cap (${keys.length}/${limits.maxEngines} in ${limits.mode} mode)`;
+    const reason = `RAM ${ramMB}MB > ${RAM_LIMIT_MB}MB limit`;
     console.log(`[Engine] Eviction triggered: ${reason}`);
 
     // Priority 1: Zombie engines (0 speed, 0 active streams)
