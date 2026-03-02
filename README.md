@@ -59,11 +59,19 @@ Deploying your own private Stremio server takes less than 2 minutes.
 5. Click **Deploy Web Service** and wait for it to go live.
 
 ### Method 2: Hugging Face Spaces (FREE 16GB RAM! 🚀)
-This is currently the best "High RAM" free option.
-1. Create a "New Space" on [Hugging Face](https://huggingface.co/spaces).
-2. Select **Docker** as the SDK.
-3. Choose the **Blank** template or upload your files.
-4. It provides a massive **16GB RAM** for free, making OOM issues impossible.
+This is currently the best "High RAM" free option. It offers **16GB RAM**, which is 32x more than Render's free tier.
+
+1.  **Sign up** at [huggingface.co](https://huggingface.co/).
+2.  Click **New** → **Space**.
+3.  Name your Space (e.g., `my-stremio-addon`).
+4.  **SDK**: Select **Docker** (This is critical).
+5.  **Template**: Choose **Blank**.
+6.  **Public/Private**: Public is fine.
+7.  Once created, click **Files and versions** → **Add file** → **Upload files**.
+8.  Upload everything in this repository (including the `Dockerfile` I created).
+9.  Wait 1 minute for it to build.
+10. Your Space will provide a direct URL (e.g., `https://username-my-stremio-addon.hf.space`). 
+11. Add `/manifest.json` to that URL and paste it into Stremio!
 
 ### Method 3: Oracle Cloud Free Tier (24GB RAM - The King 👑)
 If you can get an account, this is the most powerful free server on earth.
