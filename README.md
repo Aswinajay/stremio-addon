@@ -1,79 +1,69 @@
 # 🎬 Torrent to weblink — v3.5.31
+[![Status](https://img.shields.io/badge/Status-Healthy-brightgreen?style=for-the-badge)](https://stremio-addon-lg01.onrender.com/health)
+[![Version](https://img.shields.io/badge/Version-3.5.31-blue?style=for-the-badge)](https://github.com/Aswinajay/stremio-addon)
+[![Platform](https://img.shields.io/badge/Host-Render.com-black?style=for-the-badge)](https://render.com)
 
-Stream movies & TV series from **40+ aggregated torrent sources** with **Dynamic Resource Management**. This addon is specifically engineered for high-performance streaming on free-tier cloud platforms like Render.com (512MB RAM).
-
-## 🚀 What makes Torrent to weblink different?
-
-Torrent to weblink is a complete overhaul of the original engine, focusing on **Survival & Stability**. It uses a real-time "Smart Throttle" to prevent the server from crashing or restarting, even when multiple users are streaming simultaneously.
-
-### 🧠 Intelligent Resource Controller
-- **Dynamic Scaling**: The server real-time monitors its own RAM usage every 30 seconds and automatically shifts between 7 performance modes:
-  - ⚡ **HIGH Mode** (< 100MB RAM): **60 peer connections** for maximum speed.
-  - ⚖️ **BALANCED/MEDIUM Modes**: Throttles connections to keep memory stable.
-  - 🚨 **CRITICAL/EMERGENCY Modes** (> 185MB RAM): Dials connections down as low as **1 peer** to prevent an OOM (Out Of Memory) restart.
-- **Unlimited Engine Capacity**: We removed the artificial "Max 3 Movies" limit. As long as your RAM is under the 200MB safety line, you can have an unlimited number of concurrent streams.
-
-### 📡 Smart Scraping "Waves"
-- **Anti-Spike Logic**: Scrapers no longer fire all at once (which causes RAM spikes). They now fire in **3 timed waves** with a 100ms cooling period in between to let the Node.js Garbage Collector breathe.
-- **5MB Payload Cap**: Every incoming scraper response is capped at 5MB to prevent massive HTML pages from flooding the server's memory.
-
-### 🥇 Superior Stream Quality
-- **Smart Torrent Merging**: If multiple sources (YTS, TPB, Torrentio) find the same file, Hydra+ **fuses them into one**. It combines the source labels (e.g., `Source: YTS + TPB + Comet`) and automatically uses the **highest reported seeder count** among them.
-- **No Filters, No Limits**: We removed all CAM/0-seed filters and result caps. You get every single result the scrapers find, sorted by quality.
-- **45s Pure Cleanup**: If you close a movie, the engine is forcefully terminated after 45 seconds of abandonment, instantly freeing up RAM for the next user.
+A high-performance Stremio addon engineered for **survival on free-tier cloud hosting**. Built with an intelligent resource controller to provide buffer-free streaming without hitting memory limits.
 
 ---
 
-## 🎨 How It Works
+## 🚀 The Hydra Brain (Resource Management)
+Unlike standard addons, **Torrent to weblink** features a sophisticated "Hydra Brain" controller that prevents server restarts on Render's 512MB RAM limit.
 
-```
-Stremio Player  ←──  HTTP Stream (Range Support)  ←──  Hydra+ Engine (RAM Guard)  ←──  40+ Aggregated Scrapers
-```
+### 🧠 Intelligent Tiered Scaling
+The system monitors RAM usage and velocity in real-time, automatically shifting between performance modes:
+- **⚡ HIGH Mode** (<100MB): Full speed, max peers for instant playback.
+- **⚖️ BALANCED Mode**: Optimized peer counts for multi-user stability.
+- **🚨 EMERGENCY Mode** (>185MB): Immediate peer pruning down to **1 seeder** to guarantee server survival.
 
-## 🛠️ Deploy to Render.com (Free Tier)
-
-### 1. Push to GitHub
-
-```bash
-git init
-git add .
-git commit -m "feat: v3.5.20 Hydra+ Hyper-Stability"
-git remote add origin https://github.com/YOUR_USERNAME/stremio-addon.git
-git push -u origin main
-```
-
-### 2. Deploy on Render
-1. Go to [render.com](https://render.com/) and sign up.
-2. Click **New** → **Web Service** → Connect your GitHub repo.
-3. Settings (Auto-detected):
-   - **Build Command**: `npm install`
-   - **Start Command**: `node server.js`
-   - **Plan**: Free
-4. Add Environment Variable (Optional but recommended):
-   - `PORT`: `10000`
-
-### 3. Install in Stremio
-1. Copy your Render URL (e.g., `https://stremio-addon-xxxx.onrender.com`).
-2. Open **Stremio** → **Addons** → Paste the URL in the search bar.
-3. Ensure it ends in `/manifest.json`.
+### 📈 Predictive RAM Guard
+The brain doesn't just react — it **predicts**. It tracks the velocity (MB/s) of memory growth and throttles connections *before* the limit is reached, ensuring 100% uptime.
 
 ---
 
-## 📊 Live Monitoring
-Visit `/dashboard` on your addon URL to see the **Real-time Engine Monitor**:
-- **Dynamic Mode Badge**: See if the server is in HIGH, BALANCED, or CRITICAL mode.
-- **Peers & Speeds**: Watch the active swarm for every movie currently being watched.
-- **RAM Usage**: Monitor the 200MB safety line in real-time.
+## 🔥 Key Features
 
-## ⚙️ Survival Configurations (Hardcoded for Render)
+| Feature | Description |
+| :--- | :--- |
+| **📡 40+ Sources** | Aggregated results from TPB, YTS, Torrentio, Comet, and more. |
+| **📉 Smart Throttling** | Dynamically adjusts peer limits (1 to 80) based on server health. |
+| **🌊 Scraper Waves** | Tiered search execution with GC cooling to prevent RAM spikes. |
+| **🛡️ Seed Protection** | Never prunes high-value seeders (>0.2 MB/s), even under pressure. |
+| **🧹 Auto-Cleanup** | Engines are destroyed 45s after a stream is closed to free memory. |
+| **📊 Dashboard** | Real-time monitoring of active engines, speeds, and RAM. |
 
-| Component | Logic |
-|-----------|----------------------|
-| **RAM Limit** | 200 MB (Hard Guardrail) |
-| **Engine Cap** | Unlimited (RAM-Dependent) |
-| **Abandonment** | 45 Seconds (Instant Kill) |
-| **Conns Range** | 1 to 80 (Hydra Brain) |
-| **GC Pause** | 100ms (Between Scrapers) |
+---
 
-## License
-MIT
+## 🛠️ Quick Start
+
+### 1. Install to Stremio
+1. Copy this URL: `https://stremio-addon-lg01.onrender.com/manifest.json`
+2. Open **Stremio** → **Addons** → **Add External Addon**
+3. Paste the URL and click **Install**.
+
+### 2. Deploy Your Own
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com)
+1. Fork this repository.
+2. Create a new **Web Service** on Render.
+3. Connect your fork.
+4. Set **Build Command**: `npm install`
+5. Set **Start Command**: `node server.js`
+
+---
+
+## 📊 Monitoring
+Check the health and performance of your addon anytime:
+- **Dashboard**: [stremio-addon-lg01.onrender.com/dashboard](https://stremio-addon-lg01.onrender.com/dashboard)
+- **Health JSON**: [stremio-addon-lg01.onrender.com/health](https://stremio-addon-lg01.onrender.com/health)
+
+---
+
+## ☕ Support My Work
+If this addon has made your streaming experience better, consider supporting the development!
+
+<a href="https://www.buymeacoffee.com/aswinajay" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
+---
+
+## 📜 License
+This project is licensed under the MIT License - see the LICENSE file for details.
