@@ -552,6 +552,7 @@ function buildMagnet(infoHash) {
 
 function evictIfNeeded() {
     const keys = Object.keys(activeEngines);
+    const limits = getDynamicLimits();
     const ramMB = getRamUsageMB();
     const overRam = ramMB > RAM_LIMIT_MB;
 
