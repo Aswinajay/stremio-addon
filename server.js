@@ -332,9 +332,48 @@ function purgeTmpIfNeeded() {
         }
     } catch (e) { /* ignore */ }
 }
-// Scan /tmp every 60s
+// Scan /tmp every 60s (safety net — memory storage should prevent disk growth)
 setInterval(purgeTmpIfNeeded, 60 * 1000);
 
+// ─── Memory-Only Piece Storage ──────────────────────────────
+// For a streaming proxy we never need to persist pieces to disk.
+// Pieces live in RAM just long enough to be served over HTTP, then GC'd.
+// This eliminates the /tmp disk exhaustion that caused OOM restarts.
+function createMemoryStorage() {
+    const MAX_PIECES = 96; // max pieces to keep in RAM per engine (~96 * typical 256KB = ~24MB)
+    return function (pieceLength, opts) {
+        // Map<index, {buf: Buffer, t: number}> — t used for LRU eviction
+        const store = new Map();
+
+        const evictOldestIfNeeded = () => {
+            if (store.size <= MAX_PIECES) return;
+            let oldestKey = null, oldestTime = Infinity;
+            for (const [k, v] of store) {
+                if (v.t < oldestTime) { oldestKey = k; oldestTime = v.t; }
+            }
+            if (oldestKey !== null) store.delete(oldestKey);
+        };
+
+        return {
+            get(index, opts2, cb) {
+                if (typeof opts2 === 'function') { cb = opts2; opts2 = {}; }
+                const entry = store.get(index);
+                if (!entry) return cb(new Error('piece not in memory'));
+                const buf = entry.buf;
+                const offset = (opts2 && opts2.offset) || 0;
+                const length = (opts2 && opts2.length != null) ? opts2.length : buf.length - offset;
+                cb(null, buf.slice(offset, offset + length));
+            },
+            put(index, buf, cb) {
+                store.set(index, { buf, t: Date.now() });
+                evictOldestIfNeeded();
+                if (cb) cb(null);
+            },
+            close(cb) { store.clear(); if (cb) cb(null); },
+            destroy(cb) { store.clear(); if (cb) cb(null); }
+        };
+    };
+}
 
 // ─── Hydra Brain: Advanced Dynamic Resource Controller ───────
 // Tracks RAM trend (velocity) across real-time samples to be PREDICTIVE
@@ -630,7 +669,8 @@ function getOrCreateEngine(infoHash) {
         uploads: 0,                 // Do not upload to save bandwidth/CPU
         verify: false,              // skip piece hash verification to save massive CPU
         dht: true,                  // Use DHT
-        tracker: true               // Use trackers
+        tracker: true,              // Use trackers
+        storage: createMemoryStorage(), // NO disk writes — pieces live in RAM only
     });
 
     const entry = {
