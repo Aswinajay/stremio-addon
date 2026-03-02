@@ -436,17 +436,24 @@ function getDynamicLimits(forInfoHash) {
     // ── 4. Pressure Multiplier ──────────────────────────────
     // Exponential squeeze as RAM nears the ceiling
     const pressureRatio = Math.max(0, Math.min(1, effectiveRam / RAM_LIMIT_MB));
-    const pressureMultiplier = Math.pow(1 - pressureRatio, 1.5); // 0..1 curve
+
+    // Make the curve more lenient if we have a lot of RAM (Hugging Face)
+    // On 300MB systems, stay strict. On 2000MB+ systems, be more relaxed.
+    const exponent = RAM_LIMIT_MB > 1000 ? 1.2 : 1.5;
+    const pressureMultiplier = Math.pow(1 - pressureRatio, exponent);
+
     perEngineConns = Math.max(1, Math.min(80, Math.floor(perEngineConns * (0.3 + 0.7 * pressureMultiplier))));
 
-    // ── 5. Mode Label ───────────────────────────────────────
+    // ── 5. Mode Label (Percentage-based scaling) ──────────────
     let mode = 'HIGH';
-    if (effectiveRam > 195) mode = 'EMERGENCY';
-    else if (effectiveRam > 185) mode = 'CRITICAL';
-    else if (effectiveRam > 170) mode = 'SEVERE';
-    else if (effectiveRam > 150) mode = 'LOW';
-    else if (effectiveRam > 120) mode = 'MEDIUM';
-    else if (effectiveRam > 100) mode = 'BALANCED';
+    const usagePercent = (effectiveRam / RAM_LIMIT_MB) * 100;
+
+    if (usagePercent > 90) mode = 'EMERGENCY';
+    else if (usagePercent > 85) mode = 'CRITICAL';
+    else if (usagePercent > 75) mode = 'SEVERE';
+    else if (usagePercent > 60) mode = 'LOW';
+    else if (usagePercent > 45) mode = 'MEDIUM';
+    else if (usagePercent > 30) mode = 'BALANCED';
 
     const trendStr = trend >= 0 ? `+${trend.toFixed(1)}` : trend.toFixed(1);
     return {
