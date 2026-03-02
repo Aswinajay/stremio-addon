@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.28',
+        version: '3.5.29',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
@@ -553,12 +553,20 @@ function getOrCreateEngine(infoHash) {
             engine.swarm.size = currentLimits.connections;
             if (engine.swarm.maxConnections) engine.swarm.maxConnections = currentLimits.connections;
         }
-        // If our budget INCREASED from last tick, RAM recovered — trigger peer re-discovery
-        if (currentLimits.connections > prevLimit && peers < currentLimits.connections) {
+
+        // Only re-announce if budget jumped significantly (+10c) AND cooldown (30s) passed
+        // Prevents noisy re-announces from minor budget oscillations (e.g. 38c -> 40c)
+        const budgetJump = currentLimits.connections - prevLimit;
+        const timeSinceAnnounce = Date.now() - (entry._lastAnnounce || 0);
+        const needsMorePeers = peers < Math.floor(currentLimits.connections * 0.5); // below 50% utilization
+        if (budgetJump >= 10 && timeSinceAnnounce > 30000 && needsMorePeers) {
             try {
                 if (engine.swarm?.announce) engine.swarm.announce();
                 if (engine.discovery?.lookup) engine.discovery.lookup();
-                console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 📡 RAM recovered → Re-announcing (budget: ${prevLimit}c ➞ ${currentLimits.connections}c)`);
+                // Also poke the swarm to reconnect its pending queue
+                if (engine.swarm?.resume) engine.swarm.resume();
+                entry._lastAnnounce = Date.now();
+                console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 📡 Peer Recovery: budget +${budgetJump}c (${prevLimit}c ➞ ${currentLimits.connections}c), peers: ${peers}`);
             } catch (e) { /* ignore */ }
         }
         entry._prevPeerLimit = currentLimits.connections;
