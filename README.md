@@ -1,7 +1,7 @@
 # 🎬 Torrent to weblink — The Ultimate Stremio Addon
 
 [![Status](https://img.shields.io/badge/Status-Healthy-brightgreen?style=for-the-badge)](https://stremio.eletroclay.com/health)
-[![Version](https://img.shields.io/badge/Version-3.5.31-blue?style=for-the-badge)](https://github.com/Aswinajay/stremio-addon)
+[![Version](https://img.shields.io/badge/Version-3.5.40-blue?style=for-the-badge)](https://github.com/Aswinajay/stremio-addon)
 [![Platform](https://img.shields.io/badge/Host-Render.com-black?style=for-the-badge)](https://render.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.style=for-the-badge)](https://opensource.org/licenses/MIT)
 
@@ -58,7 +58,20 @@ Deploying your own private Stremio server takes less than 2 minutes.
    - **Plan**: Free
 5. Click **Deploy Web Service** and wait for it to go live.
 
-### Method 2: Local / VPS Hosting
+### Method 2: Hugging Face Spaces (FREE 16GB RAM! 🚀)
+This is currently the best "High RAM" free option.
+1. Create a "New Space" on [Hugging Face](https://huggingface.co/spaces).
+2. Select **Docker** as the SDK.
+3. Choose the **Blank** template or upload your files.
+4. It provides a massive **16GB RAM** for free, making OOM issues impossible.
+
+### Method 3: Oracle Cloud Free Tier (24GB RAM - The King 👑)
+If you can get an account, this is the most powerful free server on earth.
+1. Create an "Always Free" instance with **Ampere A1 (ARM)**.
+2. Allocate **24GB of RAM** and 4 OCPUs.
+3. Install Node.js and run the server. It can handle hundreds of 4K streams simultaneously.
+
+### Method 4: Local / VPS Hosting
 ```bash
 git clone https://github.com/Aswinajay/stremio-addon.git
 cd stremio-addon
