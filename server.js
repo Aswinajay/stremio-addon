@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.27',
+        version: '3.5.28',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
@@ -547,11 +547,21 @@ function getOrCreateEngine(infoHash) {
         // ── Hydra Brain: Per-engine weighted peer limit ──
         const currentLimits = getDynamicLimits(infoHash);
 
-        // Dynamic Swarm Limit Sync (Tells the engine to stop seeking more peers)
+        // Dynamic Swarm Limit Sync + Recovery Re-announce
+        const prevLimit = entry._prevPeerLimit || currentLimits.connections;
         if (engine.swarm.size !== currentLimits.connections) {
             engine.swarm.size = currentLimits.connections;
             if (engine.swarm.maxConnections) engine.swarm.maxConnections = currentLimits.connections;
         }
+        // If our budget INCREASED from last tick, RAM recovered — trigger peer re-discovery
+        if (currentLimits.connections > prevLimit && peers < currentLimits.connections) {
+            try {
+                if (engine.swarm?.announce) engine.swarm.announce();
+                if (engine.discovery?.lookup) engine.discovery.lookup();
+                console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 📡 RAM recovered → Re-announcing (budget: ${prevLimit}c ➞ ${currentLimits.connections}c)`);
+            } catch (e) { /* ignore */ }
+        }
+        entry._prevPeerLimit = currentLimits.connections;
 
         if (peers > currentLimits.connections) {
             const ram = getRamUsageMB();
