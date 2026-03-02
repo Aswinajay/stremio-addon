@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.25',
+        version: '3.5.26',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
@@ -222,14 +222,32 @@ const activeEngines = {};
 
 function getDynamicLimits() {
     const ram = getRamUsageMB();
-    // Unlimited engines, but ultra-aggressive peer scaling to save RAM
-    if (ram > 195) return { connections: 1, mode: 'EMERGENCY' };
-    if (ram > 185) return { connections: 5, mode: 'CRITICAL' };
-    if (ram > 170) return { connections: 12, mode: 'SEVERE' };
-    if (ram > 150) return { connections: 20, mode: 'LOW' };
-    if (ram > 120) return { connections: 35, mode: 'MEDIUM' };
-    if (ram > 100) return { connections: 50, mode: 'BALANCED' };
-    return { connections: 80, mode: 'HIGH' };
+    const numEngines = Object.keys(activeEngines).length || 1;
+
+    // Calculate Safe Peer Budget: Allow ~0.7 peers per MB of remaining RAM
+    // 200MB limit, if at 100MB used, 100MB free = 70 total peers
+    const headRoom = Math.max(0, RAM_LIMIT_MB - ram);
+    let totalBudget = Math.floor(headRoom * 0.7);
+
+    // Balance across all engines: Evenly split the budget
+    let perEngineConns = Math.floor(totalBudget / numEngines);
+
+    // Floor/Ceiling check
+    perEngineConns = Math.max(1, Math.min(80, perEngineConns));
+
+    // Determine UI mode name
+    let mode = 'HIGH';
+    if (ram > 195) mode = 'EMERGENCY';
+    else if (ram > 185) mode = 'CRITICAL';
+    else if (ram > 170) mode = 'SEVERE';
+    else if (ram > 150) mode = 'LOW';
+    else if (ram > 120) mode = 'MEDIUM';
+    else if (ram > 100) mode = 'BALANCED';
+
+    return {
+        connections: perEngineConns,
+        mode: `${mode} (${perEngineConns} per eng)`
+    };
 }
 
 function getRamUsageMB() {
