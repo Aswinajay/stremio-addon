@@ -38,7 +38,13 @@ const builder = new addonBuilder(manifest);
 // ─── Helpers ─────────────────────────────────────────────
 function getBaseUrl() {
     if (process.env.RENDER_EXTERNAL_URL) return process.env.RENDER_EXTERNAL_URL;
-    return `http://localhost:${process.env.PORT || 3000}`;
+    if (process.env.SPACE_ID) {
+        const [user, name] = process.env.SPACE_ID.toLowerCase().split('/');
+        return `https://${user}-${name.replace(/\//g, '-')}.hf.space`;
+    }
+    // If we're on local/VPS but no env var, provide a fallback (port 7860 for HF)
+    const port = process.env.PORT || 3000;
+    return `http://localhost:${port}`;
 }
 
 function formatSize(bytes) {
