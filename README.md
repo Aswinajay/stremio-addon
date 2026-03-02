@@ -38,7 +38,7 @@ When RAM recovers and stabilizes, the addon implements a 30-second cooldown befo
 - **🌊 Smart Scraper Waves**: Scrapers execute in 3 timed waves with automated Garbage Collection (GC) pauses. This prevents the server memory spikes normally caused by bulk API requests.
 - **🧬 Advanced Torrent Merging**: If multiple scrapers find the exact same file (matching hash), the addon **fuses them into a single result**, combining source tags and prioritizing the highest seeder count.
 - **� No Arbitrary Limits**: Watch as many concurrent movies as you want. There are no artificial "Max 3 Streams" limits—engine capacity is 100% dynamic and based solely on available RAM.
-- **🧹 45-Second Auto-Cleanup**: If you close the Stremio player, the active torrent engine is forcefully terminated 45 seconds later, instantly flushing the RAM cache for the next viewer.
+- **🧹 3-Minute Auto-Cleanup**: If you close the Stremio player, the active torrent engine is forcefully terminated 3 minutes later, instantly flushing the RAM cache while allowing enough buffer grace time.
 
 ---
 

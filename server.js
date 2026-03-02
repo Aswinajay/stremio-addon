@@ -295,8 +295,8 @@ const addonRouter = getRouter(addonInterface);
 app.use(addonRouter);
 
 // ─── Torrent Engine Management ───────────────────────────
-const RAM_LIMIT_MB = 200;        // Guardrail
-const ENGINE_TIMEOUT = 5 * 60 * 1000;
+const RAM_LIMIT_MB = parseInt(process.env.RAM_LIMIT_MB) || 250;        // Guardrail
+const ENGINE_TIMEOUT = 10 * 60 * 1000;
 const CONNECT_TIMEOUT = 90000;
 const ZOMBIE_TIMEOUT = 2 * 60 * 1000;
 const activeEngines = {};
@@ -556,12 +556,12 @@ function resetEngineTimeout(infoHash) {
     entry.lastAccess = Date.now();
     clearTimeout(entry.timeout);
 
-    // Dynamic Timeout: 10 mins if actively watching, but only 45 seconds if abandoned (0 active streams)
-    const duration = entry.activeStreams > 0 ? ENGINE_TIMEOUT : 45 * 1000;
+    // Dynamic Timeout: 10 mins if actively watching, but 3 minutes if abandoned (0 active streams)
+    const duration = entry.activeStreams > 0 ? ENGINE_TIMEOUT : 3 * 60 * 1000;
 
     entry.timeout = setTimeout(() => {
         if (entry.activeStreams === 0 && duration < ENGINE_TIMEOUT) {
-            console.log(`[Engine] Terminated abandoned stream ${infoHash.substring(0, 8)}… (0 active streams for 45s)`);
+            console.log(`[Engine] Terminated abandoned stream ${infoHash.substring(0, 8)}… (0 active streams for 3m)`);
         }
         destroyEngine(infoHash);
     }, duration);
