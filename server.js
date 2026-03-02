@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.29',
+        version: '3.5.30',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
@@ -576,36 +576,30 @@ function getOrCreateEngine(infoHash) {
             // Prune if RAM is pressured or if we are way over the limit
             if (ram > 120 || peers > currentLimits.connections + 5) {
                 const excessCount = peers - currentLimits.connections;
-                // Sort by speed (slowest first) and kill excess
+                // Sort by speed: slowest first, BUT protect high-value seeders (>0.2 MB/s)
+                // High-value peers ALWAYS go to the end (never pruned first)
+                const HOG_THRESHOLD = 0.2 * 1024 * 1024; // 0.2 MB/s = high value
                 const sortedWires = [...engine.swarm.wires].sort((a, b) => {
                     const spdA = a.downloadSpeed ? a.downloadSpeed() : 0;
                     const spdB = b.downloadSpeed ? b.downloadSpeed() : 0;
-                    return spdA - spdB;
+                    const aIsValuable = spdA >= HOG_THRESHOLD ? 1 : 0;
+                    const bIsValuable = spdB >= HOG_THRESHOLD ? 1 : 0;
+                    // Valuable seeds sink to bottom (protected), slow peers float to top
+                    if (aIsValuable !== bIsValuable) return aIsValuable - bIsValuable;
+                    return spdA - spdB; // among same tier: slowest first
                 });
 
                 let pruned = 0;
                 for (let i = 0; i < excessCount; i++) {
                     if (sortedWires[i]) {
+                        const spd = sortedWires[i].downloadSpeed ? sortedWires[i].downloadSpeed() : 0;
+                        // Final safety: never kill a genuinely fast seeder
+                        if (spd >= HOG_THRESHOLD) break;
                         try { sortedWires[i].destroy(); pruned++; } catch (e) { }
                     }
                 }
                 if (pruned > 0) {
-                    console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] ✂️ Pruned ${pruned} peers | ${currentLimits.label}`);
-                }
-            }
-
-            // ── Bandwidth Hog Pruning (Kill fast peers in EMERGENCY to stop buffer bloat) ──
-            if (currentLimits.mode === 'EMERGENCY' || ram > 195) {
-                let hogPruned = 0;
-                for (const wire of engine.swarm.wires) {
-                    const spd = wire.downloadSpeed ? wire.downloadSpeed() : 0;
-                    // In emergency, even 0.5 MB/s is too much of a burst for RAM
-                    if (spd > 0.5 * 1024 * 1024) {
-                        try { wire.destroy(); hogPruned++; } catch (e) { }
-                    }
-                }
-                if (hogPruned > 0) {
-                    console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 🏹 Snipped ${hogPruned} high-speed peers for RAM survival`);
+                    console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] ✂️ Pruned ${pruned} slow peers | ${currentLimits.label}`);
                 }
             }
         }
