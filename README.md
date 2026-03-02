@@ -61,7 +61,7 @@ Check the health and performance of your addon anytime:
 ## ☕ Support My Work
 If this addon has made your streaming experience better, consider supporting the development!
 
-<a href="https://www.buymeacoffee.com/aswinajay" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+<a href="https://www.buymeacoffee.com/withaswin" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
 ---
 
