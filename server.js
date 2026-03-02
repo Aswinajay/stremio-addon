@@ -295,7 +295,7 @@ const addonRouter = getRouter(addonInterface);
 app.use(addonRouter);
 
 // ─── Torrent Engine Management ───────────────────────────
-const RAM_LIMIT_MB = parseInt(process.env.RAM_LIMIT_MB) || 250;        // Guardrail
+const RAM_LIMIT_MB = parseInt(process.env.RAM_LIMIT_MB) || 300;        // Guardrail (Safe for 512MB RAM)
 const DISK_LIMIT_MB = parseInt(process.env.DISK_LIMIT_MB) || 300;      // /tmp disk guardrail
 const ENGINE_TIMEOUT = 10 * 60 * 1000;
 const CONNECT_TIMEOUT = 90000;
@@ -626,15 +626,13 @@ function destroyEngine(infoHash, force = false) {
     delete activeEngines[infoHash];
     console.log(`[Engine] Destroying: ${infoHash.substring(0, 8)}… (active: ${Object.keys(activeEngines).length})`);
 
-    // engine.remove() tears down connections AND deletes /tmp disk cache
-    // This is critical to prevent /tmp from growing unboundedly and OOM-killing Render
+    // engine.remove() tears down connections and clears memory storage
     try {
         entry.engine.remove(false, (err) => {
             if (err) {
-                // Fallback: just destroy swarm, disk cleanup may have failed
                 try { entry.engine.destroy(); } catch (e) { /* ignore */ }
             }
-            console.log(`[Engine] 🗑️ Disk cache purged: ${infoHash.substring(0, 8)}…`);
+            console.log(`[Engine] ✨ Resources flushed: ${infoHash.substring(0, 8)}…`);
         });
     } catch (e) {
         try { entry.engine.destroy(); } catch (e2) { /* ignore */ }
@@ -704,12 +702,12 @@ function getOrCreateEngine(infoHash) {
         const peers = engine.swarm.wires.length;
         const downloaded = (engine.swarm.downloaded / 1024 / 1024).toFixed(2);
 
-        // Track meaningful speed for zombie detection (floor: 0.1 MB/s = meaningful activity)
+        // Track meaningful speed for zombie detection
         if (parseFloat(speedMb) >= 0.1) {
             entry.lastNonZeroSpeed = Date.now();
         }
 
-        // Rolling speed window (last 6 samples = 30s)
+        // Rolling speed window
         entry.speedSamples.push(parseFloat(speedMb));
         if (entry.speedSamples.length > 6) entry.speedSamples.shift();
         const avgSpeed = entry.speedSamples.reduce((a, b) => a + b, 0) / entry.speedSamples.length;
@@ -725,45 +723,38 @@ function getOrCreateEngine(infoHash) {
         }
 
         // Only re-announce if budget jumped significantly (+10c) AND cooldown (30s) passed
-        // Prevents noisy re-announces from minor budget oscillations (e.g. 38c -> 40c)
         const budgetJump = currentLimits.connections - prevLimit;
         const timeSinceAnnounce = Date.now() - (entry._lastAnnounce || 0);
-        const needsMorePeers = peers < Math.floor(currentLimits.connections * 0.5); // below 50% utilization
+        const needsMorePeers = peers < Math.floor(currentLimits.connections * 0.5);
         if (budgetJump >= 10 && timeSinceAnnounce > 30000 && needsMorePeers) {
             try {
                 if (engine.swarm?.announce) engine.swarm.announce();
                 if (engine.discovery?.lookup) engine.discovery.lookup();
-                // Also poke the swarm to reconnect its pending queue
                 if (engine.swarm?.resume) engine.swarm.resume();
                 entry._lastAnnounce = Date.now();
-                console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 📡 Peer Recovery: budget +${budgetJump}c (${prevLimit}c ➞ ${currentLimits.connections}c), peers: ${peers}`);
+                console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 📡 Peer Recovery: budget +${budgetJump}c (${prevLimit}c -> ${currentLimits.connections}c), peers: ${peers}`);
             } catch (e) { /* ignore */ }
         }
         entry._prevPeerLimit = currentLimits.connections;
 
         if (peers > currentLimits.connections) {
             const ram = getRamUsageMB();
-            // Prune if RAM is pressured or if we are way over the limit
             if (ram > 120 || peers > currentLimits.connections + 5) {
                 const excessCount = peers - currentLimits.connections;
-                // Sort by speed: slowest first, BUT protect high-value seeders (>0.2 MB/s)
-                // High-value peers ALWAYS go to the end (never pruned first)
-                const HOG_THRESHOLD = 0.2 * 1024 * 1024; // 0.2 MB/s = high value
+                const HOG_THRESHOLD = 0.2 * 1024 * 1024;
                 const sortedWires = [...engine.swarm.wires].sort((a, b) => {
                     const spdA = a.downloadSpeed ? a.downloadSpeed() : 0;
                     const spdB = b.downloadSpeed ? b.downloadSpeed() : 0;
                     const aIsValuable = spdA >= HOG_THRESHOLD ? 1 : 0;
                     const bIsValuable = spdB >= HOG_THRESHOLD ? 1 : 0;
-                    // Valuable seeds sink to bottom (protected), slow peers float to top
                     if (aIsValuable !== bIsValuable) return aIsValuable - bIsValuable;
-                    return spdA - spdB; // among same tier: slowest first
+                    return spdA - spdB;
                 });
 
                 let pruned = 0;
                 for (let i = 0; i < excessCount; i++) {
                     if (sortedWires[i]) {
                         const spd = sortedWires[i].downloadSpeed ? sortedWires[i].downloadSpeed() : 0;
-                        // Final safety: never kill a genuinely fast seeder
                         if (spd >= HOG_THRESHOLD) break;
                         try { sortedWires[i].destroy(); pruned++; } catch (e) { }
                     }
@@ -774,7 +765,7 @@ function getOrCreateEngine(infoHash) {
             }
         }
 
-        // ── Slow Peer Eviction (every 30s = 6 ticks) ──────
+        // ── Slow Peer Eviction (every 30s) ──────
         slowPeerEvictionTick++;
         if (slowPeerEvictionTick >= 6) {
             slowPeerEvictionTick = 0;
@@ -782,7 +773,6 @@ function getOrCreateEngine(infoHash) {
             for (const wire of [...engine.swarm.wires]) {
                 try {
                     const peerSpeed = wire.downloadSpeed ? wire.downloadSpeed() : 0;
-                    // Evict peers that have been uploading 0 bytes and we have plenty of others
                     if (peerSpeed === 0 && peers > 10 && wire.peerChoking) {
                         wire.destroy();
                         evicted++;
@@ -794,12 +784,12 @@ function getOrCreateEngine(infoHash) {
             }
         }
 
-        // Log if active — include RAM so we can monitor memory pressure
+        // Log traffic stats - use ASCII-friendly symbols to avoid encoding issues
         if (parseFloat(speedMb) > 0 || peers > 0) {
             const ramMB = getRamUsageMB();
-            const ramWarn = ramMB > (RAM_LIMIT_MB * 0.85) ? ' ⚠️ RAM' : '';
+            const ramWarn = ramMB > (RAM_LIMIT_MB * 0.9) ? ' (!) RAM' : '';
             const activeStr = entry.activeStreams;
-            console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speedMb} MB/s | 👥 ${peers}p | � ${downloaded} MB | 👥 ${activeStr} active | avg:${avgSpeed.toFixed(2)}${ramWarn}`);
+            console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speedMb} MB/s | 👥 ${peers}p | ↓ ${downloaded} MB | 👥 ${activeStr} active | avg:${avgSpeed.toFixed(2)}${ramWarn}`);
         }
     }, 5000);
 
