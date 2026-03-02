@@ -1,3 +1,12 @@
+---
+title: Torrent to weblink
+emoji: 🎬
+colorFrom: purple
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 # 🎬 Torrent to weblink — The Ultimate Stremio Addon
 
 [![Status](https://img.shields.io/badge/Status-Healthy-brightgreen?style=for-the-badge)](https://stremio.eletroclay.com/health)
