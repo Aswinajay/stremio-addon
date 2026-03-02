@@ -69,7 +69,18 @@ npm start
 
 ---
 
-## 🔌 How to Install in Stremio
+## 🔌 Quick Install (Use the Live Server)
+
+Don't want to deploy your own? You can use my public, maintained instance of **Torrent to weblink** right now:
+
+1. Open Stremio.
+2. Go to **Addons** → **Add External Addon**.
+3. Paste: `https://stremio-addon-lg01.onrender.com/manifest.json`
+4. Click **Install**.
+
+---
+
+## 🔌 How to Install Your Own Deploy
 
 1. Copy your deployed server URL (e.g., `https://stremio-addon-lg01.onrender.com`).
 2. Open the **Stremio App**.
