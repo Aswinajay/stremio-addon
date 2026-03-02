@@ -340,18 +340,22 @@ setInterval(purgeTmpIfNeeded, 60 * 1000);
 // Pieces live in RAM just long enough to be served over HTTP, then GC'd.
 // This eliminates the /tmp disk exhaustion that caused OOM restarts.
 function createMemoryStorage() {
-    const MAX_PIECES = 96; // max pieces to keep in RAM per engine (~96 * typical 256KB = ~24MB)
+    const MAX_MEMORY_BYTES = 40 * 1024 * 1024; // 40MB buffer per engine
     return function (pieceLength, opts) {
-        // Map<index, {buf: Buffer, t: number}> — t used for LRU eviction
         const store = new Map();
+        let currentBytes = 0;
 
-        const evictOldestIfNeeded = () => {
-            if (store.size <= MAX_PIECES) return;
-            let oldestKey = null, oldestTime = Infinity;
-            for (const [k, v] of store) {
-                if (v.t < oldestTime) { oldestKey = k; oldestTime = v.t; }
+        const evictIfNeeded = () => {
+            while (currentBytes > MAX_MEMORY_BYTES && store.size > 0) {
+                let oldestKey = null, oldestTime = Infinity;
+                for (const [k, v] of store) {
+                    if (v.t < oldestTime) { oldestKey = k; oldestTime = v.t; }
+                }
+                if (oldestKey !== null) {
+                    currentBytes -= store.get(oldestKey).buf.length;
+                    store.delete(oldestKey);
+                } else break;
             }
-            if (oldestKey !== null) store.delete(oldestKey);
         };
 
         return {
@@ -359,18 +363,21 @@ function createMemoryStorage() {
                 if (typeof opts2 === 'function') { cb = opts2; opts2 = {}; }
                 const entry = store.get(index);
                 if (!entry) return cb(new Error('piece not in memory'));
+                entry.t = Date.now(); // update access time
                 const buf = entry.buf;
                 const offset = (opts2 && opts2.offset) || 0;
                 const length = (opts2 && opts2.length != null) ? opts2.length : buf.length - offset;
                 cb(null, buf.slice(offset, offset + length));
             },
             put(index, buf, cb) {
+                if (store.has(index)) currentBytes -= store.get(index).buf.length;
                 store.set(index, { buf, t: Date.now() });
-                evictOldestIfNeeded();
+                currentBytes += buf.length;
+                evictIfNeeded();
                 if (cb) cb(null);
             },
-            close(cb) { store.clear(); if (cb) cb(null); },
-            destroy(cb) { store.clear(); if (cb) cb(null); }
+            close(cb) { store.clear(); currentBytes = 0; if (cb) cb(null); },
+            destroy(cb) { store.clear(); currentBytes = 0; if (cb) cb(null); }
         };
     };
 }
