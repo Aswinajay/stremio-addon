@@ -121,90 +121,165 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Buffer-Free Stremio Addon</title>
+        <title>Torrent to weblink | Stremio Addon</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
         <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
             body {
-                margin: 0;
-                padding: 0;
-                font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                background-color: #121212;
-                color: #ffffff;
+                font-family: 'Outfit', sans-serif;
+                background: radial-gradient(circle at 50% 0%, #1a1a2e 0%, #0d0d17 100%);
+                color: #e2e8f0;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
                 justify-content: center;
                 min-height: 100vh;
                 text-align: center;
+                overflow: hidden;
+            }
+            .glow {
+                position: absolute;
+                width: 600px;
+                height: 600px;
+                background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+                top: -200px;
+                border-radius: 50%;
+                z-index: 0;
+                animation: pulse 8s ease-in-out infinite alternate;
+            }
+            @keyframes pulse {
+                0% { transform: scale(1); opacity: 0.8; }
+                100% { transform: scale(1.1); opacity: 1; }
             }
             .container {
-                max-width: 600px;
-                padding: 40px;
-                background: linear-gradient(145deg, #1e1e1e, #141414);
-                border-radius: 20px;
-                box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
-                border: 1px solid #333;
+                position: relative;
+                z-index: 1;
+                max-width: 700px;
+                padding: 50px 40px;
+                background: rgba(255, 255, 255, 0.03);
+                border-radius: 24px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                backdrop-filter: blur(16px);
+                -webkit-backdrop-filter: blur(16px);
+                box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                animation: floatUp 1s ease-out forwards;
+            }
+            @keyframes floatUp {
+                from { transform: translateY(40px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
             }
             h1 {
-                margin-top: 0;
-                font-size: 2.5rem;
-                background: -webkit-linear-gradient(45deg, #8a2be2, #4b0082);
+                font-size: 3.5rem;
+                font-weight: 800;
+                margin-bottom: 15px;
+                background: linear-gradient(135deg, #a78bfa 0%, #ec4899 100%);
                 -webkit-background-clip: text;
                 -webkit-text-fill-color: transparent;
+                letter-spacing: -1px;
             }
-            p {
-                font-size: 1.1rem;
+            p.subtitle {
+                font-size: 1.25rem;
                 line-height: 1.6;
-                color: #b3b3b3;
-                margin-bottom: 30px;
+                color: #94a3b8;
+                margin-bottom: 40px;
+                font-weight: 300;
             }
             .btn {
-                display: inline-block;
-                background-color: #8b5cf6;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
                 color: white;
                 text-decoration: none;
-                padding: 15px 40px;
-                font-size: 1.2rem;
-                font-weight: bold;
+                padding: 16px 48px;
+                font-size: 1.25rem;
+                font-weight: 600;
                 border-radius: 50px;
-                transition: transform 0.2s, background-color 0.2s, box-shadow 0.2s;
-                box-shadow: 0 5px 15px rgba(139, 92, 246, 0.4);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: 0 10px 25px rgba(139, 92, 246, 0.5);
+                position: relative;
+                overflow: hidden;
+            }
+            .btn::after {
+                content: '';
+                position: absolute;
+                top: 0; left: -100%; width: 50%; height: 100%;
+                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+                transform: skewX(-20deg);
+                transition: 0.5s;
+            }
+            .btn:hover::after {
+                left: 150%;
             }
             .btn:hover {
-                transform: translateY(-2px);
-                background-color: #7c3aed;
-                box-shadow: 0 8px 20px rgba(139, 92, 246, 0.6);
+                transform: translateY(-3px) scale(1.02);
+                box-shadow: 0 15px 35px rgba(139, 92, 246, 0.6);
+            }
+            .btn-links {
+                margin-top: 25px;
+                display: flex;
+                gap: 20px;
+                justify-content: center;
+            }
+            .link {
+                color: #8b5cf6;
+                text-decoration: none;
+                font-weight: 600;
+                font-size: 1rem;
+                transition: color 0.2s;
+            }
+            .link:hover {
+                color: #a78bfa;
             }
             .features {
                 display: flex;
+                flex-wrap: wrap;
                 justify-content: center;
-                gap: 20px;
-                margin-top: 30px;
+                gap: 15px;
+                margin-top: 40px;
             }
             .feature {
-                background: #2a2a2a;
-                padding: 10px 20px;
-                border-radius: 10px;
-                font-size: 0.9rem;
-                color: #d1d5db;
-                border: 1px solid #3d3d3d;
+                background: rgba(139, 92, 246, 0.1);
+                padding: 12px 24px;
+                border-radius: 12px;
+                font-size: 0.95rem;
+                font-weight: 600;
+                color: #e2e8f0;
+                border: 1px solid rgba(139, 92, 246, 0.2);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                transition: transform 0.2s, background 0.2s;
+            }
+            .feature:hover {
+                transform: translateY(-2px);
+                background: rgba(139, 92, 246, 0.2);
             }
         </style>
     </head>
     <body>
+        <div class="glow"></div>
         <div class="container">
-            <h1>Buffer-Free Server</h1>
-            <p>
-                This exclusive Stremio addon proxies massive 4K & HD torrents through a high-speed cloud server, completely eliminating buffering and stuttering on low-end devices.
+            <h1>Torrent to weblink</h1>
+            <p class="subtitle">
+                The ultimate Stremio addon powered by the <b>Hydra Brain</b> engine. Experience flawless, buffer-free 4K & HDR streaming with an intelligent cloud proxy that guarantees 100% uptime.
             </p>
-            <a href="${installUrl}" class="btn">🚀 Install in Stremio</a>
-            <div style="margin-top: 15px;">
-                <a href="/dashboard" style="color: #8b5cf6; text-decoration: none; font-size: 0.9rem;">📊 Live Stream Monitor</a>
+            <a href="${installUrl}" class="btn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+                Install in Stremio
+            </a>
+            
+            <div class="btn-links">
+                <a href="/dashboard" class="link">📊 Live Monitor</a>
+                <a href="https://github.com/Aswinajay/stremio-addon" target="_blank" class="link">⭐ GitHub</a>
+                <a href="https://www.buymeacoffee.com/withaswin" target="_blank" class="link">☕ Support Me</a>
             </div>
             
             <div class="features">
                 <div class="feature">⚡ Cloud Proxy</div>
-                <div class="feature">🎬 30+ Massive Sources</div>
-                <div class="feature">📺 Official Tio & Bitsearch</div>
+                <div class="feature">🧠 Hydra Brain Protection</div>
+                <div class="feature">🎬 40+ Aggregated Sources</div>
             </div>
         </div>
     </body>
