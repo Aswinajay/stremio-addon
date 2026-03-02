@@ -296,10 +296,45 @@ app.use(addonRouter);
 
 // ─── Torrent Engine Management ───────────────────────────
 const RAM_LIMIT_MB = parseInt(process.env.RAM_LIMIT_MB) || 250;        // Guardrail
+const DISK_LIMIT_MB = parseInt(process.env.DISK_LIMIT_MB) || 300;      // /tmp disk guardrail
 const ENGINE_TIMEOUT = 10 * 60 * 1000;
 const CONNECT_TIMEOUT = 90000;
 const ZOMBIE_TIMEOUT = 2 * 60 * 1000;
 const activeEngines = {};
+
+// ─── /tmp Disk Guard ───────────────────────────────────────
+const { execSync } = require('child_process');
+function getTmpDiskMB() {
+    try {
+        // du -sm returns MBs for the torrent-stream cache directory
+        const out = execSync('du -sm /tmp/torrent-stream 2>/dev/null || echo 0').toString().trim();
+        return parseInt(out.split('\t')[0]) || 0;
+    } catch (e) { return 0; }
+}
+function purgeTmpIfNeeded() {
+    const diskMB = getTmpDiskMB();
+    if (diskMB < DISK_LIMIT_MB) return;
+    console.log(`[DiskGuard] 💾 /tmp disk usage: ${diskMB}MB exceeds ${DISK_LIMIT_MB}MB limit — purging stale cache...`);
+    try {
+        const cacheDir = '/tmp/torrent-stream/torrent-stream';
+        const fs = require('fs');
+        if (!fs.existsSync(cacheDir)) return;
+        const hashes = fs.readdirSync(cacheDir);
+        // Find hashes NOT currently in activeEngines and delete them
+        const activeHashes = new Set(Object.keys(activeEngines));
+        for (const hash of hashes) {
+            if (!activeHashes.has(hash)) {
+                try {
+                    execSync(`rm -rf "${cacheDir}/${hash}"`);
+                    console.log(`[DiskGuard] 🗑️ Purged stale cache: ${hash.substring(0, 8)}…`);
+                } catch (e) { /* ignore */ }
+            }
+        }
+    } catch (e) { /* ignore */ }
+}
+// Scan /tmp every 60s
+setInterval(purgeTmpIfNeeded, 60 * 1000);
+
 
 // ─── Hydra Brain: Advanced Dynamic Resource Controller ───────
 // Tracks RAM trend (velocity) across real-time samples to be PREDICTIVE
@@ -541,13 +576,22 @@ function destroyEngine(infoHash, force = false) {
 
     clearTimeout(entry.timeout);
     if (entry.logInterval) clearInterval(entry.logInterval);
-    try {
-        entry.engine.destroy();
-    } catch (e) {
-        // ignore
-    }
     delete activeEngines[infoHash];
-    console.log(`[Engine] Destroyed: ${infoHash.substring(0, 8)}… (active: ${Object.keys(activeEngines).length})`);
+    console.log(`[Engine] Destroying: ${infoHash.substring(0, 8)}… (active: ${Object.keys(activeEngines).length})`);
+
+    // engine.remove() tears down connections AND deletes /tmp disk cache
+    // This is critical to prevent /tmp from growing unboundedly and OOM-killing Render
+    try {
+        entry.engine.remove(false, (err) => {
+            if (err) {
+                // Fallback: just destroy swarm, disk cleanup may have failed
+                try { entry.engine.destroy(); } catch (e) { /* ignore */ }
+            }
+            console.log(`[Engine] 🗑️ Disk cache purged: ${infoHash.substring(0, 8)}…`);
+        });
+    } catch (e) {
+        try { entry.engine.destroy(); } catch (e2) { /* ignore */ }
+    }
 }
 
 function resetEngineTimeout(infoHash) {
@@ -584,7 +628,7 @@ function getOrCreateEngine(infoHash) {
         tmp: '/tmp/torrent-stream',
         connections: limits.connections,
         uploads: 0,                 // Do not upload to save bandwidth/CPU
-        verify: false,              // skip piece hash verification to save massive CPU 
+        verify: false,              // skip piece hash verification to save massive CPU
         dht: true,                  // Use DHT
         tracker: true               // Use trackers
     });
