@@ -340,7 +340,8 @@ setInterval(purgeTmpIfNeeded, 60 * 1000);
 // Pieces live in RAM just long enough to be served over HTTP, then GC'd.
 // This eliminates the /tmp disk exhaustion that caused OOM restarts.
 function createMemoryStorage() {
-    const MAX_MEMORY_BYTES = 40 * 1024 * 1024; // 40MB buffer per engine
+    // Dynamic buffer: 250MB on 16GB systems, 40MB on 512MB systems.
+    const MAX_MEMORY_BYTES = RAM_LIMIT_MB > 1000 ? 250 * 1024 * 1024 : 40 * 1024 * 1024;
     return function (pieceLength, opts) {
         const store = new Map();
         let currentBytes = 0;

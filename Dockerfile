@@ -20,7 +20,7 @@ ENV PORT=7860
 
 # Since Hugging Face has 16GB RAM, we can set a much higher limit for buffering movies!
 # This makes 4K streaming even smoother.
-ENV RAM_LIMIT_MB=2048
+ENV RAM_LIMIT_MB=14000
 
 # Expose the port
 EXPOSE 7860
