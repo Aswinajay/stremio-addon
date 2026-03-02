@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.21',
+        version: '3.5.22',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
@@ -222,14 +222,14 @@ const activeEngines = {};
 
 function getDynamicLimits() {
     const ram = getRamUsageMB();
-    // Ultra-granular scaling reaching down to 1 connection & 1 engine in emergency
-    if (ram > 195) return { maxEngines: 1, connections: 1, mode: 'EMERGENCY' };
-    if (ram > 185) return { maxEngines: 2, connections: 5, mode: 'CRITICAL' };
-    if (ram > 170) return { maxEngines: 3, connections: 12, mode: 'SEVERE' };
-    if (ram > 150) return { maxEngines: 4, connections: 20, mode: 'LOW' };
-    if (ram > 120) return { maxEngines: 6, connections: 30, mode: 'MEDIUM' };
-    if (ram > 100) return { maxEngines: 8, connections: 45, mode: 'BALANCED' };
-    return { maxEngines: 12, connections: 70, mode: 'HIGH' };
+    // Unlimited engines, but ultra-aggressive peer scaling to save RAM
+    if (ram > 195) return { connections: 1, mode: 'EMERGENCY' };
+    if (ram > 185) return { connections: 5, mode: 'CRITICAL' };
+    if (ram > 170) return { connections: 12, mode: 'SEVERE' };
+    if (ram > 150) return { connections: 20, mode: 'LOW' };
+    if (ram > 120) return { connections: 35, mode: 'MEDIUM' };
+    if (ram > 100) return { connections: 50, mode: 'BALANCED' };
+    return { connections: 80, mode: 'HIGH' };
 }
 
 function getRamUsageMB() {
@@ -334,14 +334,11 @@ function buildMagnet(infoHash) {
 function evictIfNeeded() {
     const keys = Object.keys(activeEngines);
     const ramMB = getRamUsageMB();
-    const limits = getDynamicLimits();
-
     const overRam = ramMB > RAM_LIMIT_MB;
-    const overCap = keys.length >= limits.maxEngines;
 
-    if (!overRam && !overCap) return;
+    if (!overRam) return;
 
-    const reason = overRam ? `RAM ${ramMB}MB > ${RAM_LIMIT_MB}MB limit` : `engine cap ${keys.length} > ${limits.maxEngines} (${limits.mode} mode)`;
+    const reason = `RAM ${ramMB}MB > ${RAM_LIMIT_MB}MB limit`;
     console.log(`[Engine] Eviction triggered: ${reason}`);
 
     // Priority 1: Zombie engines (0 speed, 0 active streams)
