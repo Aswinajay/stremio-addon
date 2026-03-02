@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.30',
+        version: '3.5.31',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
@@ -907,7 +907,7 @@ app.listen(PORT, () => {
     const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
     console.log(`
 ╔══════════════════════════════════════════════════════╗
-║         🎬 Render Torrent Stream Addon 🎬            ║
+║             🎬 Torrent to weblink 🎬              ║
 ╠══════════════════════════════════════════════════════╣
 ║                                                      ║
 ║  Server running on port ${String(PORT).padEnd(28)}  ║

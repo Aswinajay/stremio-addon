@@ -1,10 +1,10 @@
-# 🎬 Render Torrent Stream (Hydra+) — v3.5.20
+# 🎬 Torrent to weblink — v3.5.31
 
 Stream movies & TV series from **40+ aggregated torrent sources** with **Dynamic Resource Management**. This addon is specifically engineered for high-performance streaming on free-tier cloud platforms like Render.com (512MB RAM).
 
-## 🚀 What makes Hydra+ (v3.5.x) different?
+## 🚀 What makes Torrent to weblink different?
 
-Hydra+ is a complete overhaul of the original engine, focusing on **Survival & Stability**. It uses a real-time "Smart Throttle" to prevent the server from crashing or restarting, even when multiple users are streaming simultaneously.
+Torrent to weblink is a complete overhaul of the original engine, focusing on **Survival & Stability**. It uses a real-time "Smart Throttle" to prevent the server from crashing or restarting, even when multiple users are streaming simultaneously.
 
 ### 🧠 Intelligent Resource Controller
 - **Dynamic Scaling**: The server real-time monitors its own RAM usage every 30 seconds and automatically shifts between 7 performance modes:
@@ -67,12 +67,12 @@ Visit `/dashboard` on your addon URL to see the **Real-time Engine Monitor**:
 
 ## ⚙️ Survival Configurations (Hardcoded for Render)
 
-| Component | Hydra+ v3.5.20 Logic |
+| Component | Logic |
 |-----------|----------------------|
 | **RAM Limit** | 200 MB (Hard Guardrail) |
 | **Engine Cap** | Unlimited (RAM-Dependent) |
 | **Abandonment** | 45 Seconds (Instant Kill) |
-| **Conns Range** | 1 to 60 (Dynamic Scaling) |
+| **Conns Range** | 1 to 80 (Hydra Brain) |
 | **GC Pause** | 100ms (Between Scrapers) |
 
 ## License
