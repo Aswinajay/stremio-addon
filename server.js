@@ -14,11 +14,14 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.26',
+        version: '3.5.27',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
         ramUsageMB: getRamUsageMB(),
+        ramTrendMBs: getRamTrend().toFixed(2),
+        dynamicMode: getDynamicLimits().mode,
+        activePeerBudget: getDynamicLimits().connections,
         ramLimitMB: RAM_LIMIT_MB,
         uptime: process.uptime(),
     });
@@ -220,33 +223,79 @@ const CONNECT_TIMEOUT = 90000;
 const ZOMBIE_TIMEOUT = 2 * 60 * 1000;
 const activeEngines = {};
 
-function getDynamicLimits() {
+// ─── Hydra Brain: Advanced Dynamic Resource Controller ───────
+// Tracks RAM trend (velocity) across real-time samples to be PREDICTIVE
+let _ramHistory = [];
+function recordRamSample() {
+    const now = getRamUsageMB();
+    _ramHistory.push({ t: Date.now(), v: now });
+    if (_ramHistory.length > 6) _ramHistory.shift(); // keep last 30s
+}
+function getRamTrend() {
+    // Returns MB/s change velocity (positive = climbing, negative = falling)
+    if (_ramHistory.length < 2) return 0;
+    const oldest = _ramHistory[0];
+    const newest = _ramHistory[_ramHistory.length - 1];
+    const dtSec = (newest.t - oldest.t) / 1000;
+    if (dtSec === 0) return 0;
+    return (newest.v - oldest.v) / dtSec; // MB/sec
+}
+
+function getDynamicLimits(forInfoHash) {
+    recordRamSample();
     const ram = getRamUsageMB();
-    const numEngines = Object.keys(activeEngines).length || 1;
+    const trend = getRamTrend();   // MB/sec, positive = RAM is rising
+    const engines = Object.values(activeEngines);
+    const numEngines = engines.length || 1;
 
-    // Calculate Safe Peer Budget: Allow ~0.7 peers per MB of remaining RAM
-    // 200MB limit, if at 100MB used, 100MB free = 70 total peers
-    const headRoom = Math.max(0, RAM_LIMIT_MB - ram);
-    let totalBudget = Math.floor(headRoom * 0.7);
+    // ── 1. Predictive Headroom ──────────────────────────────
+    // Project forward 10s: if RAM is climbing, shrink headroom *now*
+    const projectedRam = ram + (trend * 10);
+    const effectiveRam = Math.max(ram, Math.min(RAM_LIMIT_MB, projectedRam));
+    const headRoom = Math.max(0, RAM_LIMIT_MB - effectiveRam);
 
-    // Balance across all engines: Evenly split the budget
-    let perEngineConns = Math.floor(totalBudget / numEngines);
+    // ── 2. Total Peer Budget (0.7 peers per MB of headroom) ──
+    const totalBudget = Math.floor(headRoom * 0.7);
 
-    // Floor/Ceiling check
-    perEngineConns = Math.max(1, Math.min(80, perEngineConns));
+    // ── 3. Per-Engine Weighted Budget ───────────────────────
+    // Engines with active streams get a bigger slice; idle ones get minimal
+    // Weight formula: active ? (1 + avgSpeed) : 0.1
+    let perEngineConns;
+    if (forInfoHash && activeEngines[forInfoHash]) {
+        const me = activeEngines[forInfoHash];
+        const myWeight = me.activeStreams > 0 ? (1 + Math.min(3, (me.speedSamples?.slice(-1)[0] || 0))) : 0.1;
+        const totalWeight = engines.reduce((sum, e) => {
+            return sum + (e.activeStreams > 0 ? (1 + Math.min(3, (e.speedSamples?.slice(-1)[0] || 0))) : 0.1);
+        }, 0);
+        const myShare = totalWeight > 0 ? myWeight / totalWeight : 1 / numEngines;
+        perEngineConns = Math.floor(totalBudget * myShare);
+    } else {
+        // Generic call (no engine context): even split
+        perEngineConns = Math.floor(totalBudget / numEngines);
+    }
 
-    // Determine UI mode name
+    // ── 4. Pressure Multiplier ──────────────────────────────
+    // Exponential squeeze as RAM nears the ceiling
+    const pressureRatio = Math.max(0, Math.min(1, effectiveRam / RAM_LIMIT_MB));
+    const pressureMultiplier = Math.pow(1 - pressureRatio, 1.5); // 0..1 curve
+    perEngineConns = Math.max(1, Math.min(80, Math.floor(perEngineConns * (0.3 + 0.7 * pressureMultiplier))));
+
+    // ── 5. Mode Label ───────────────────────────────────────
     let mode = 'HIGH';
-    if (ram > 195) mode = 'EMERGENCY';
-    else if (ram > 185) mode = 'CRITICAL';
-    else if (ram > 170) mode = 'SEVERE';
-    else if (ram > 150) mode = 'LOW';
-    else if (ram > 120) mode = 'MEDIUM';
-    else if (ram > 100) mode = 'BALANCED';
+    if (effectiveRam > 195) mode = 'EMERGENCY';
+    else if (effectiveRam > 185) mode = 'CRITICAL';
+    else if (effectiveRam > 170) mode = 'SEVERE';
+    else if (effectiveRam > 150) mode = 'LOW';
+    else if (effectiveRam > 120) mode = 'MEDIUM';
+    else if (effectiveRam > 100) mode = 'BALANCED';
 
+    const trendStr = trend >= 0 ? `+${trend.toFixed(1)}` : trend.toFixed(1);
     return {
         connections: perEngineConns,
-        mode: `${mode} (${perEngineConns} per eng)`
+        mode,
+        label: `${mode} | 🧠${ram}MB ${trendStr}MB/s | ${perEngineConns}c`,
+        ram,
+        trend,
     };
 }
 
@@ -449,9 +498,9 @@ function getOrCreateEngine(infoHash) {
     // Evict if at capacity
     evictIfNeeded();
 
-    const limits = getDynamicLimits();
+    const limits = getDynamicLimits(infoHash);
     const magnet = buildMagnet(infoHash);
-    console.log(`[Engine] Creating new engine (${limits.mode} mode, ${limits.connections} connections): ${infoHash.substring(0, 8)}…`);
+    console.log(`[Engine] Creating new engine (${limits.label || limits.mode}, ${limits.connections}c): ${infoHash.substring(0, 8)}…`);
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
@@ -495,8 +544,8 @@ function getOrCreateEngine(infoHash) {
         if (entry.speedSamples.length > 6) entry.speedSamples.shift();
         const avgSpeed = entry.speedSamples.reduce((a, b) => a + b, 0) / entry.speedSamples.length;
 
-        // ── Emergency Peer Pruning (Every 5s if RAM is pressured) ──
-        const currentLimits = getDynamicLimits();
+        // ── Hydra Brain: Per-engine weighted peer limit ──
+        const currentLimits = getDynamicLimits(infoHash);
 
         // Dynamic Swarm Limit Sync (Tells the engine to stop seeking more peers)
         if (engine.swarm.size !== currentLimits.connections) {
@@ -523,7 +572,7 @@ function getOrCreateEngine(infoHash) {
                     }
                 }
                 if (pruned > 0) {
-                    console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] ✂️ Pruned ${pruned} excess peers (${currentLimits.mode} mode)`);
+                    console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] ✂️ Pruned ${pruned} peers | ${currentLimits.label}`);
                 }
             }
 
