@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.23',
+        version: '3.5.24',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
@@ -479,10 +479,17 @@ function getOrCreateEngine(infoHash) {
 
         // ── Emergency Peer Pruning (Every 5s if RAM is pressured) ──
         const currentLimits = getDynamicLimits();
+
+        // Dynamic Swarm Limit Sync (Tells the engine to stop seeking more peers)
+        if (engine.swarm.size !== currentLimits.connections) {
+            engine.swarm.size = currentLimits.connections;
+            if (engine.swarm.maxConnections) engine.swarm.maxConnections = currentLimits.connections;
+        }
+
         if (peers > currentLimits.connections) {
             const ram = getRamUsageMB();
-            // Only prune aggressively if we are in MEDIUM mode or higher (>120MB)
-            if (ram > 120) {
+            // Prune if RAM is pressured or if we are way over the limit
+            if (ram > 120 || peers > currentLimits.connections + 5) {
                 const excessCount = peers - currentLimits.connections;
                 // Sort by speed (slowest first) and kill excess
                 const sortedWires = [...engine.swarm.wires].sort((a, b) => {
