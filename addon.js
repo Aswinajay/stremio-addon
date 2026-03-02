@@ -5,19 +5,21 @@ const axios = require('axios');
 const YTS_MIRRORS = [
     'https://yts.torrentbay.st',
     'https://movies-api.accel.li',
+    'https://yifi.mx',
 ];
 const EZTV_MIRRORS = ['https://eztvx.to', 'https://eztv.re', 'https://eztv.wf', 'https://eztv.tf', 'https://eztv1.xyz'];
 const TPB_MIRRORS = [
     { url: 'https://apibay.org', type: 'api' },
     { url: 'https://pirateproxy.live', type: 'html' },
     { url: 'https://thepiratebay0.org', type: 'html' },
+    { url: 'https://thepiratebay10.org', type: 'html' },
     { url: 'https://tpbay.win', type: 'html' },
     { url: 'https://tpb.party', type: 'html' }
 ];
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
     id: 'com.render.torrent.stream',
-    version: '3.5.31',
+    version: '3.5.40',
     name: 'Torrent to weblink',
     description: 'Auto-rotating Scrapers | Multi-Format Series Search | 4K HDR',
     logo: 'https://stremio.eletroclay.com/logo.png',
@@ -68,6 +70,7 @@ function getAxiosOpts() {
         headers: {
             'User-Agent': USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)],
             'Accept': 'application/json, text/html',
+            'Referer': 'https://www.google.com/',
         }
     };
 }
