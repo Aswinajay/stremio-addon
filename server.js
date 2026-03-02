@@ -797,8 +797,9 @@ function getOrCreateEngine(infoHash) {
         // Log if active — include RAM so we can monitor memory pressure
         if (parseFloat(speedMb) > 0 || peers > 0) {
             const ramMB = getRamUsageMB();
-            const ramWarn = ramMB > 180 ? ' ⚠️ RAM' : '';
-            console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speedMb} MB/s | 👥 ${peers} peers | 💾 ${downloaded} MB | avg:${avgSpeed.toFixed(2)} | 🧠 ${ramMB}MB${ramWarn}`);
+            const ramWarn = ramMB > (RAM_LIMIT_MB * 0.85) ? ' ⚠️ RAM' : '';
+            const activeStr = entry.activeStreams;
+            console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speedMb} MB/s | 👥 ${peers}p | � ${downloaded} MB | 👥 ${activeStr} active | avg:${avgSpeed.toFixed(2)}${ramWarn}`);
         }
     }, 5000);
 
