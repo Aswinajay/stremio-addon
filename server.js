@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.24',
+        version: '3.5.25',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
@@ -506,6 +506,21 @@ function getOrCreateEngine(infoHash) {
                 }
                 if (pruned > 0) {
                     console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] ✂️ Pruned ${pruned} excess peers (${currentLimits.mode} mode)`);
+                }
+            }
+
+            // ── Bandwidth Hog Pruning (Kill fast peers in EMERGENCY to stop buffer bloat) ──
+            if (currentLimits.mode === 'EMERGENCY' || ram > 195) {
+                let hogPruned = 0;
+                for (const wire of engine.swarm.wires) {
+                    const spd = wire.downloadSpeed ? wire.downloadSpeed() : 0;
+                    // In emergency, even 0.5 MB/s is too much of a burst for RAM
+                    if (spd > 0.5 * 1024 * 1024) {
+                        try { wire.destroy(); hogPruned++; } catch (e) { }
+                    }
+                }
+                if (hogPruned > 0) {
+                    console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 🏹 Snipped ${hogPruned} high-speed peers for RAM survival`);
                 }
             }
         }
