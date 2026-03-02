@@ -1,3 +1,7 @@
 node_modules/
 .env
 /tmp/torrent-stream/
+DOMAIN_SETUP.md
+test.js
+.vscode/
+render.yaml
