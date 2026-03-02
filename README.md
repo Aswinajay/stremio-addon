@@ -1,6 +1,6 @@
 # 🎬 Torrent to weblink — The Ultimate Stremio Addon
 
-[![Status](https://img.shields.io/badge/Status-Healthy-brightgreen?style=for-the-badge)](https://stremio-addon-lg01.onrender.com/health)
+[![Status](https://img.shields.io/badge/Status-Healthy-brightgreen?style=for-the-badge)](https://stremio.eletroclay.com/health)
 [![Version](https://img.shields.io/badge/Version-3.5.31-blue?style=for-the-badge)](https://github.com/Aswinajay/stremio-addon)
 [![Platform](https://img.shields.io/badge/Host-Render.com-black?style=for-the-badge)](https://render.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.style=for-the-badge)](https://opensource.org/licenses/MIT)
@@ -75,18 +75,18 @@ Don't want to deploy your own? You can use my public, maintained instance of **T
 
 1. Open Stremio.
 2. Go to **Addons** → **Add External Addon**.
-3. Paste: `https://stremio-addon-lg01.onrender.com/manifest.json`
+3. Paste: `https://stremio.eletroclay.com/manifest.json`
 4. Click **Install**.
 
 ---
 
 ## 🔌 How to Install Your Own Deploy
 
-1. Copy your deployed server URL (e.g., `https://stremio-addon-lg01.onrender.com`).
+1. Copy your deployed server URL (e.g., `https://stremio.eletroclay.com`).
 2. Open the **Stremio App**.
 3. Go to the **Addons** section.
 4. Click on the search bar / **Add external addon**.
-5. Paste your URL, ensure it ends with `/manifest.json` (e.g., `https://stremio-addon-lg01.onrender.com/manifest.json`).
+5. Paste your URL, ensure it ends with `/manifest.json` (e.g., `https://stremio.eletroclay.com/manifest.json`).
 6. Click **Install**. You are ready to stream!
 
 ---

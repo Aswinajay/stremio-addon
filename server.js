@@ -112,7 +112,7 @@ app.get('/dashboard', (req, res) => {
 });
 // ─── Landing Page ────────────────────────────────────────
 app.get('/', (req, res) => {
-    const host = req.get('host') || 'stremio-addon-lg01.onrender.com';
+    const host = req.get('host') || 'stremio.eletroclay.com';
     const installUrl = `stremio://${host}/manifest.json`;
 
     res.send(`
