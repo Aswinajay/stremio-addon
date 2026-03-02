@@ -14,7 +14,7 @@ app.use(cors());
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.22',
+        version: '3.5.23',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
@@ -476,6 +476,32 @@ function getOrCreateEngine(infoHash) {
         entry.speedSamples.push(parseFloat(speedMb));
         if (entry.speedSamples.length > 6) entry.speedSamples.shift();
         const avgSpeed = entry.speedSamples.reduce((a, b) => a + b, 0) / entry.speedSamples.length;
+
+        // ── Emergency Peer Pruning (Every 5s if RAM is pressured) ──
+        const currentLimits = getDynamicLimits();
+        if (peers > currentLimits.connections) {
+            const ram = getRamUsageMB();
+            // Only prune aggressively if we are in MEDIUM mode or higher (>120MB)
+            if (ram > 120) {
+                const excessCount = peers - currentLimits.connections;
+                // Sort by speed (slowest first) and kill excess
+                const sortedWires = [...engine.swarm.wires].sort((a, b) => {
+                    const spdA = a.downloadSpeed ? a.downloadSpeed() : 0;
+                    const spdB = b.downloadSpeed ? b.downloadSpeed() : 0;
+                    return spdA - spdB;
+                });
+
+                let pruned = 0;
+                for (let i = 0; i < excessCount; i++) {
+                    if (sortedWires[i]) {
+                        try { sortedWires[i].destroy(); pruned++; } catch (e) { }
+                    }
+                }
+                if (pruned > 0) {
+                    console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] ✂️ Pruned ${pruned} excess peers (${currentLimits.mode} mode)`);
+                }
+            }
+        }
 
         // ── Slow Peer Eviction (every 30s = 6 ticks) ──────
         slowPeerEvictionTick++;
