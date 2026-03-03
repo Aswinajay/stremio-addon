@@ -680,7 +680,8 @@ function getOrCreateEngine(infoHash) {
 
     const limits = getDynamicLimits(infoHash);
     const magnet = buildMagnet(infoHash);
-    console.log(`[Engine] Creating new engine (${limits.label || limits.mode}, ${limits.connections}c): #${entry.id}…`);
+    const nextId = ++engineIdCounter;
+    console.log(`[Engine] Creating new engine (${limits.label || limits.mode}, ${limits.connections}c): #${nextId}…`);
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
@@ -693,7 +694,7 @@ function getOrCreateEngine(infoHash) {
     });
 
     const entry = {
-        id: ++engineIdCounter,
+        id: nextId,
         engine,
         isReady: false,
         activeStreams: 0,
