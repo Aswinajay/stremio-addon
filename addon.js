@@ -37,7 +37,19 @@ const builder = new addonBuilder(manifest);
 
 // ─── Helpers ─────────────────────────────────────────────
 function getBaseUrl() {
+    // 1. Prioritize a manually set Site URL (perfect for Cloudflare Workers/Custom Domains)
+    if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, '');
+
+    // 2. Fallback to Render detection
     if (process.env.RENDER_EXTERNAL_URL) return process.env.RENDER_EXTERNAL_URL;
+
+    // 3. Fallback to Hugging Face detection
+    if (process.env.SPACE_ID) {
+        const [user, name] = process.env.SPACE_ID.toLowerCase().split('/');
+        return `https://${user}-${name.replace(/\//g, '-')}.hf.space`;
+    }
+
+    // 4. Local development
     return `http://localhost:${process.env.PORT || 3000}`;
 }
 
