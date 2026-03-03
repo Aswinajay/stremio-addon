@@ -710,6 +710,16 @@ function getOrCreateEngine(infoHash) {
     activeEngines[infoHash] = entry;
     resetEngineTimeout(infoHash);
 
+    // ─── Force Start (Immediate) ──────────────────────────
+    setTimeout(() => {
+        try {
+            if (engine.swarm?.resume) engine.swarm.resume();
+            if (engine.discovery?.lookup) engine.discovery.lookup();
+            if (engine.swarm?.announce) engine.swarm.announce();
+            console.log(`[Engine:#${nextId}] 🚀 Force-starting swarm discovery...`);
+        } catch (e) { /* ignore */ }
+    }, 100);
+
     // ─── Dynamic Speed Manager ───────────────────────────
     entry.lastNonZeroSpeed = Date.now();
     entry.speedSamples = []; // rolling window of speed samples
@@ -875,12 +885,14 @@ function getOrCreateEngine(infoHash) {
             bestFile.select();
             console.log(`[Engine] Priority → "${bestFile.name}" (${(bestFile.length / 1024 / 1024).toFixed(0)} MB)`);
 
-            // ── Pre-buffer Warm-up: Read first 2MB to force download start ──
+            // ── Pre-buffer Warm-up: Read first chunk to force download start ──
             setTimeout(() => {
                 try {
-                    const warmStream = bestFile.createReadStream({ start: 0, end: Math.min(2 * 1024 * 1024, bestFile.length - 1) });
+                    // 10MB on HF/High-RAM, 2MB on Render/Low-RAM
+                    const warmSize = (process.env.RAM_LIMIT_MB > 1000) ? 10 * 1024 * 1024 : 2 * 1024 * 1024;
+                    const warmStream = bestFile.createReadStream({ start: 0, end: Math.min(warmSize, bestFile.length - 1) });
                     warmStream.on('data', () => { }); // consume to drive the download
-                    warmStream.on('end', () => console.log(`[SpeedMgr:#${entry.id}] 🔥 Pre-buffer complete`));
+                    warmStream.on('end', () => console.log(`[SpeedMgr:#${entry.id}] 🔥 Pre-buffer (${(warmSize / 1024 / 1024).toFixed(0)}MB) complete`));
                     warmStream.on('error', () => { }); // ignore warm-up errors
                 } catch (e) { /* ignore */ }
             }, 200); // slight delay to let file.select() take effect
