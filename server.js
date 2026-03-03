@@ -591,24 +591,19 @@ function evictIfNeeded() {
         return;
     }
 
-    // Priority 2: Oldest idle engine (no active streams)
-    let oldest = null;
-    let oldestTime = Infinity;
+    // We are over RAM! Evict ALL idle engines first.
+    let evictedIdle = 0;
     for (const key of keys) {
-        if (activeEngines[key].activeStreams === 0 && activeEngines[key].lastAccess < oldestTime) {
-            oldestTime = activeEngines[key].lastAccess;
-            oldest = key;
+        if (activeEngines[key].activeStreams === 0) {
+            console.log(`[Engine] Evicting idle engine: #${activeEngines[key]?.id}…`);
+            destroyEngine(key);
+            evictedIdle++;
         }
     }
-    if (oldest) {
-        console.log(`[Engine] Evicting oldest idle engine: #${activeEngines[oldest]?.id}…`);
-        destroyEngine(oldest);
-        return;
-    }
 
-    // Priority 3: Force eviction of slowest engine if in HIGH memory modes
+    // Priority 3: Force eviction of slowest engine if in HIGH memory modes and NO idle engines exist
     const critical = limits.mode === 'EMERGENCY' || limits.mode === 'CRITICAL' || overRam;
-    if (critical) {
+    if (critical && evictedIdle === 0) {
         let slowest = null;
         let slowestSpeed = Infinity;
         for (const key of keys) {
@@ -934,11 +929,9 @@ function serveVideoFile(file, req, res, infoHash) {
     resetEngineTimeout(infoHash);
 
     const entry = activeEngines[infoHash];
-    if (entry) entry.activeStreams++;
 
     req.on('close', () => {
         if (entry) {
-            entry.activeStreams = Math.max(0, entry.activeStreams - 1);
             resetEngineTimeout(infoHash);
         }
     });
@@ -1019,6 +1012,21 @@ app.get('/stream/:infoHash', (req, res) => {
     console.log(`[Stream] Request for #${activeEngines[infoHash]?.id}… fileIdx=${fileIdx}`);
 
     const { engine, isReady } = getOrCreateEngine(infoHash);
+    const entry = activeEngines[infoHash];
+
+    // INSTANTLY track this client connection to protect engine from being evicted as "idle"
+    let streamCounted = false;
+    if (entry) {
+        entry.activeStreams++;
+        streamCounted = true;
+    }
+
+    const uncountStream = () => {
+        if (streamCounted && entry) {
+            entry.activeStreams = Math.max(0, entry.activeStreams - 1);
+            streamCounted = false;
+        }
+    };
 
     // Prevent MaxListeners warning — multiple concurrent requests to same engine
     engine.setMaxListeners(30);
@@ -1084,7 +1092,8 @@ app.get('/stream/:infoHash', (req, res) => {
         }
     }, CONNECT_TIMEOUT);
 
-    // Clean up if client disconnects early
+    // Clean up if client disconnects early or request ends
+    res.on('finish', uncountStream);
     req.on('close', () => {
         if (!responded) {
             responded = true;
@@ -1092,6 +1101,7 @@ app.get('/stream/:infoHash', (req, res) => {
             engine.removeListener('ready', onReady);
             engine.removeListener('error', onError);
         }
+        uncountStream();
         console.log(`[Stream] Client disconnected: #${activeEngines[infoHash]?.id}…`);
     });
 });
