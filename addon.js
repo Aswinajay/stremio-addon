@@ -433,7 +433,22 @@ async function fetchWebStreamr(type, id) {
         if (!streams.length) return [];
 
         console.log(`[WebStreamr] ✓ ${streams.length} direct streams`);
-        return streams.filter(s => s.url); // Return direct streams as-is
+        return streams.filter(s => s.url).map(s => {
+            // Extract quality for sorting & display
+            const quality = parseQuality(s.name + ' ' + s.title);
+
+            // Reformat to match the addon's signature look
+            let titleLines = s.title ? s.title.split('\n') : [];
+            const mainTitle = titleLines[0] || 'Direct Stream';
+            const extraInfo = titleLines.slice(1).join(' | ');
+
+            return {
+                url: s.url,
+                name: s.name || 'WebStreamr',
+                title: `🖥️ ${quality} | ${mainTitle}${extraInfo ? `\n${extraInfo}` : ''}`,
+                behaviorHints: s.behaviorHints
+            };
+        });
     } catch (e) {
         console.error(`[WebStreamr Error] ${e.message}`);
         return [];
