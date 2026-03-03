@@ -71,7 +71,8 @@ app.get('/dashboard', (req, res) => {
         peers: entry.engine.swarm.wires.length,
         downloaded: (entry.engine.swarm.downloaded / 1024 / 1024).toFixed(2) + ' MB',
         lastAccess: new Date(entry.lastAccess).toLocaleTimeString(),
-        files: entry.engine.files?.length || 0
+        files: entry.engine.files?.length || 0,
+        fileName: entry.fileName || 'Initializing...'
     }));
 
     const limits = getDynamicLimits();
@@ -97,13 +98,16 @@ app.get('/dashboard', (req, res) => {
         <div class="grid">
             ${engines.length ? engines.map(e => `
                 <div class="card">
-                    <div><b>Engine ID:</b> ${e.id}</div>
+                    <div style="font-weight: bold; color: #fff;">Engine #${e.id}</div>
+                    <div style="margin-top: 5px; color: #8b5cf6; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${e.fileName}">
+                        📂 ${e.fileName}
+                    </div>
+                    <hr style="border: 0; border-top: 1px solid #333; margin: 10px 0;">
                     <div><b>Status:</b> ${e.ready ? '✅ Ready' : '⏳ Connecting'}</div>
                     <div><b>Active Streams:</b> <span class="stat">${e.activeStreams}</span></div>
                     <div><b>Speed:</b> <span class="stat">${e.speed}</span></div>
                     <div><b>Peers:</b> ${e.peers}</div>
                     <div><b>Downloaded:</b> ${e.downloaded}</div>
-                    <div><b>Files:</b> ${e.files}</div>
                     <div><b>Last Activity:</b> ${e.lastAccess}</div>
                 </div>
             `).join('') : '<div class="card">No active streams. Start watching something in Stremio!</div>'}
@@ -695,6 +699,7 @@ function getOrCreateEngine(infoHash) {
         activeStreams: 0,
         lastAccess: Date.now(),
         createdAt: Date.now(),
+        fileName: 'Connecting...',
     };
 
     activeEngines[infoHash] = entry;
@@ -861,6 +866,7 @@ function getOrCreateEngine(infoHash) {
         }
 
         if (bestFile) {
+            entry.fileName = bestFile.name; // Store the name for dashboard
             bestFile.select();
             console.log(`[Engine] Priority → "${bestFile.name}" (${(bestFile.length / 1024 / 1024).toFixed(0)} MB)`);
 
