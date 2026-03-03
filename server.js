@@ -73,7 +73,7 @@ app.get('/dashboard', (req, res) => {
         lastAccess: new Date(entry.lastAccess).toLocaleTimeString(),
         files: entry.engine.files?.length || 0,
         fileName: entry.fileName || 'Initializing...'
-    }));
+    })).sort((a, b) => a.id - b.id);
 
     const limits = getDynamicLimits();
     res.send(`
@@ -305,7 +305,6 @@ const ENGINE_TIMEOUT = 10 * 60 * 1000;
 const CONNECT_TIMEOUT = 90000;
 const ZOMBIE_TIMEOUT = 2 * 60 * 1000;
 const activeEngines = {};
-let engineIdCounter = 0;
 
 // ─── /tmp Disk Guard ───────────────────────────────────────
 const { execSync } = require('child_process');
@@ -680,7 +679,12 @@ function getOrCreateEngine(infoHash) {
 
     const limits = getDynamicLimits(infoHash);
     const magnet = buildMagnet(infoHash);
-    const nextId = ++engineIdCounter;
+
+    // Slot assignment: Find the lowest available ID starting from 1
+    const usedIds = Object.values(activeEngines).map(e => e.id);
+    let nextId = 1;
+    while (usedIds.includes(nextId)) nextId++;
+
     console.log(`[Engine] Creating new engine (${limits.label || limits.mode}, ${limits.connections}c): #${nextId}…`);
 
     const engine = torrentStream(magnet, {
