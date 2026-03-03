@@ -64,7 +64,7 @@ app.get('/debug', async (_req, res) => {
 // ─── Dashboard ───────────────────────────────────────────
 app.get('/dashboard', (req, res) => {
     const engines = Object.entries(activeEngines).map(([hash, entry]) => ({
-        id: hash.substring(0, 8),
+        id: activeEngines[hash]?.id || hash.substring(0, 8),
         ready: entry.isReady,
         activeStreams: entry.activeStreams || 0,
         speed: (entry.engine.swarm.downloadSpeed() / 1024 / 1024).toFixed(2) + ' MB/s',
@@ -301,6 +301,7 @@ const ENGINE_TIMEOUT = 10 * 60 * 1000;
 const CONNECT_TIMEOUT = 90000;
 const ZOMBIE_TIMEOUT = 2 * 60 * 1000;
 const activeEngines = {};
+let engineIdCounter = 0;
 
 // ─── /tmp Disk Guard ───────────────────────────────────────
 const { execSync } = require('child_process');
@@ -582,7 +583,7 @@ function evictIfNeeded() {
         return e.activeStreams === 0 && e.lastNonZeroSpeed && (Date.now() - e.lastNonZeroSpeed > ZOMBIE_TIMEOUT);
     });
     if (zombie) {
-        console.log(`[Engine] Evicting ZOMBIE: ${zombie.substring(0, 8)}…`);
+        console.log(`[Engine] Evicting ZOMBIE: #${activeEngines[zombie]?.id}…`);
         destroyEngine(zombie);
         return;
     }
@@ -597,7 +598,7 @@ function evictIfNeeded() {
         }
     }
     if (oldest) {
-        console.log(`[Engine] Evicting oldest idle engine: ${oldest.substring(0, 8)}…`);
+        console.log(`[Engine] Evicting oldest idle engine: #${activeEngines[oldest]?.id}…`);
         destroyEngine(oldest);
         return;
     }
@@ -612,7 +613,7 @@ function evictIfNeeded() {
             if (avg < slowestSpeed) { slowestSpeed = avg; slowest = key; }
         }
         if (slowest) {
-            console.log(`[Engine] 🚨 FORCED EVICTION (${limits.mode}): ${slowest.substring(0, 8)}… (avg ${slowestSpeed.toFixed(2)} MB/s)`);
+            console.log(`[Engine] 🚨 FORCED EVICTION (${limits.mode}): #${activeEngines[slowest]?.id}… (avg ${slowestSpeed.toFixed(2)} MB/s)`);
             destroyEngine(slowest, true);
         }
     }
@@ -624,7 +625,7 @@ function destroyEngine(infoHash, force = false) {
 
     // If there are active streams, don't destroy unless forced (emergency)
     if (entry.activeStreams > 0 && !force) {
-        console.log(`[Engine] Postponing destruction for ${infoHash.substring(0, 8)}: ${entry.activeStreams} active streams`);
+        console.log(`[Engine] Postponing destruction for #${entry.id}: ${entry.activeStreams} active streams`);
         resetEngineTimeout(infoHash);
         return;
     }
@@ -632,7 +633,7 @@ function destroyEngine(infoHash, force = false) {
     clearTimeout(entry.timeout);
     if (entry.logInterval) clearInterval(entry.logInterval);
     delete activeEngines[infoHash];
-    console.log(`[Engine] Destroying: ${infoHash.substring(0, 8)}… (active: ${Object.keys(activeEngines).length})`);
+    console.log(`[Engine] Destroying: #${entry.id}… (active: ${Object.keys(activeEngines).length})`);
 
     // engine.remove() tears down connections and clears memory storage
     try {
@@ -640,7 +641,7 @@ function destroyEngine(infoHash, force = false) {
             if (err) {
                 try { entry.engine.destroy(); } catch (e) { /* ignore */ }
             }
-            console.log(`[Engine] ✨ Resources flushed: ${infoHash.substring(0, 8)}…`);
+            console.log(`[Engine] ✨ Resources flushed: #${entry.id}…`);
         });
     } catch (e) {
         try { entry.engine.destroy(); } catch (e2) { /* ignore */ }
@@ -658,7 +659,7 @@ function resetEngineTimeout(infoHash) {
 
     entry.timeout = setTimeout(() => {
         if (entry.activeStreams === 0 && duration < ENGINE_TIMEOUT) {
-            console.log(`[Engine] Terminated abandoned stream ${infoHash.substring(0, 8)}… (0 active streams for 3m)`);
+            console.log(`[Engine] Terminated abandoned stream #${entry.id}… (0 active streams for 3m)`);
         }
         destroyEngine(infoHash);
     }, duration);
@@ -675,7 +676,7 @@ function getOrCreateEngine(infoHash) {
 
     const limits = getDynamicLimits(infoHash);
     const magnet = buildMagnet(infoHash);
-    console.log(`[Engine] Creating new engine (${limits.label || limits.mode}, ${limits.connections}c): ${infoHash.substring(0, 8)}…`);
+    console.log(`[Engine] Creating new engine (${limits.label || limits.mode}, ${limits.connections}c): #${entry.id}…`);
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
@@ -688,6 +689,7 @@ function getOrCreateEngine(infoHash) {
     });
 
     const entry = {
+        id: ++engineIdCounter,
         engine,
         isReady: false,
         activeStreams: 0,
@@ -740,7 +742,7 @@ function getOrCreateEngine(infoHash) {
                 if (engine.discovery?.lookup) engine.discovery.lookup();
                 if (engine.swarm?.resume) engine.swarm.resume();
                 entry._lastAnnounce = Date.now();
-                console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 📡 Peer Recovery: budget +${budgetJump}c (${prevLimit}c -> ${currentLimits.connections}c), peers: ${peers}`);
+                console.log(`[SpeedMgr:#${entry.id}] 📡 Peer Recovery: budget +${budgetJump}c (${prevLimit}c -> ${currentLimits.connections}c), peers: ${peers}`);
             } catch (e) { /* ignore */ }
         }
         entry._prevPeerLimit = currentLimits.connections;
@@ -768,7 +770,7 @@ function getOrCreateEngine(infoHash) {
                     }
                 }
                 if (pruned > 0) {
-                    console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] ✂️ Pruned ${pruned} slow peers | ${currentLimits.label}`);
+                    console.log(`[SpeedMgr:#${entry.id}] ✂️ Pruned ${pruned} slow peers | ${currentLimits.label}`);
                 }
             }
         }
@@ -788,7 +790,7 @@ function getOrCreateEngine(infoHash) {
                 } catch (e) { /* ignore */ }
             }
             if (evicted > 0) {
-                console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 🚫 Evicted ${evicted} slow peers`);
+                console.log(`[SpeedMgr:#${entry.id}] 🚫 Evicted ${evicted} slow peers`);
             }
         }
 
@@ -797,7 +799,7 @@ function getOrCreateEngine(infoHash) {
             const ramMB = getRamUsageMB();
             const ramWarn = ramMB > (RAM_LIMIT_MB * 0.9) ? ' (!) RAM' : '';
             const activeStr = entry.activeStreams;
-            console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speedMb} MB/s | 👥 ${peers}p | ↓ ${downloaded} MB | 👥 ${activeStr} active | avg:${avgSpeed.toFixed(2)}${ramWarn}`);
+            console.log(`[Engine:#${entry.id}] ⚡ ${speedMb} MB/s | 👥 ${peers}p | ↓ ${downloaded} MB | 👥 ${activeStr} active | avg:${avgSpeed.toFixed(2)}${ramWarn}`);
         }
     }, 5000);
 
@@ -821,7 +823,7 @@ function getOrCreateEngine(infoHash) {
                     const avgSpeed = e.speedSamples?.length
                         ? e.speedSamples.reduce((a, b) => a + b, 0) / e.speedSamples.length
                         : 0;
-                    console.log(`[Zombie] Killing slow engine ${hash.substring(0, 8)}… (avg ${avgSpeed.toFixed(2)} MB/s for ${zombieAge}s)`);
+                    console.log(`[Zombie] Killing slow engine #${e.id}… (avg ${avgSpeed.toFixed(2)} MB/s for ${zombieAge}s)`);
                     destroyEngine(hash);
                 } else if (e.activeStreams === 0 && e.speedSamples?.length >= 6) {
                     // Secondary check: if avg has been below 0.15 MB/s for all 6 samples (30s)
@@ -832,7 +834,7 @@ function getOrCreateEngine(infoHash) {
                         try {
                             if (e.engine?.swarm?.announce) {
                                 e.engine.swarm.announce();
-                                console.log(`[SpeedMgr:${hash.substring(0, 8)}] 🔊 Re-announcing (avg ${avgSpeed.toFixed(2)} MB/s)`);
+                                console.log(`[SpeedMgr:#${e.id}] 🔊 Re-announcing (avg ${avgSpeed.toFixed(2)} MB/s)`);
                             }
                         } catch (_) { /* ignore */ }
                     }
@@ -844,7 +846,7 @@ function getOrCreateEngine(infoHash) {
     // Mark ready when the engine fires 'ready'
     engine.on('ready', () => {
         entry.isReady = true;
-        console.log(`[Engine] Ready: ${infoHash.substring(0, 8)}… (${engine.files.length} files)`);
+        console.log(`[Engine] Ready: #${entry.id}… (${engine.files.length} files)`);
 
         // ── Priority: Deselect all, then select only the video ──
         engine.files.forEach(f => f.deselect());
@@ -867,7 +869,7 @@ function getOrCreateEngine(infoHash) {
                 try {
                     const warmStream = bestFile.createReadStream({ start: 0, end: Math.min(2 * 1024 * 1024, bestFile.length - 1) });
                     warmStream.on('data', () => { }); // consume to drive the download
-                    warmStream.on('end', () => console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 🔥 Pre-buffer complete`));
+                    warmStream.on('end', () => console.log(`[SpeedMgr:#${entry.id}] 🔥 Pre-buffer complete`));
                     warmStream.on('error', () => { }); // ignore warm-up errors
                 } catch (e) { /* ignore */ }
             }, 200); // slight delay to let file.select() take effect
@@ -956,7 +958,7 @@ function serveVideoFile(file, req, res, infoHash) {
         const stream = file.createReadStream({ start, end, highWaterMark: 4 * 1024 * 1024 });
         stream.pipe(res);
         stream.on('error', (err) => {
-            console.error(`[Stream Error] ${infoHash.substring(0, 8)} Read error: ${err.message}`);
+            console.error(`[Stream Error] #${activeEngines[infoHash]?.id} Read error: ${err.message}`);
             if (!res.headersSent) res.status(500).end();
         });
         res.on('close', () => {
@@ -977,7 +979,7 @@ function serveVideoFile(file, req, res, infoHash) {
         const stream = file.createReadStream({ highWaterMark: 4 * 1024 * 1024 });
         stream.pipe(res);
         stream.on('error', (err) => {
-            console.error(`[Stream Error] ${infoHash.substring(0, 8)} Read error: ${err.message}`);
+            console.error(`[Stream Error] #${activeEngines[infoHash]?.id} Read error: ${err.message}`);
             if (!res.headersSent) res.status(500).end();
         });
         res.on('close', () => {
@@ -991,7 +993,7 @@ app.get('/stream/:infoHash', (req, res) => {
     const { infoHash } = req.params;
     const fileIdx = req.query.fileIdx !== undefined ? parseInt(req.query.fileIdx, 10) : undefined;
 
-    console.log(`[Stream] Request for ${infoHash.substring(0, 8)}… fileIdx=${fileIdx}`);
+    console.log(`[Stream] Request for #${activeEngines[infoHash]?.id}… fileIdx=${fileIdx}`);
 
     const { engine, isReady } = getOrCreateEngine(infoHash);
 
@@ -1052,7 +1054,7 @@ app.get('/stream/:infoHash', (req, res) => {
             responded = true;
             engine.removeListener('ready', onReady);
             engine.removeListener('error', onError);
-            console.error(`[Stream] Timeout (${CONNECT_TIMEOUT / 1000}s): ${infoHash.substring(0, 8)}…`);
+            console.error(`[Stream] Timeout (${CONNECT_TIMEOUT / 1000}s): #${activeEngines[infoHash]?.id}…`);
             if (!res.headersSent) {
                 res.status(504).json({ error: 'Torrent timed out — try a lower quality with more seeders' });
             }
@@ -1067,7 +1069,7 @@ app.get('/stream/:infoHash', (req, res) => {
             engine.removeListener('ready', onReady);
             engine.removeListener('error', onError);
         }
-        console.log(`[Stream] Client disconnected: ${infoHash.substring(0, 8)}…`);
+        console.log(`[Stream] Client disconnected: #${activeEngines[infoHash]?.id}…`);
     });
 });
 
