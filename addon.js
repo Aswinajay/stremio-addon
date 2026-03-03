@@ -424,6 +424,23 @@ async function fetchStremioAddon(sourceName, baseUrl, type, id) {
 }
 
 
+// 7. Direct WebStreamr Fetcher
+async function fetchWebStreamr(type, id) {
+    try {
+        const url = `https://webstreamr.hayd.uk/stream/${type}/${id}.json`;
+        const r = await axios.get(url, { ...getAxiosOpts(), timeout: 8000 });
+        const streams = r.data?.streams || [];
+        if (!streams.length) return [];
+
+        console.log(`[WebStreamr] ✓ ${streams.length} direct streams`);
+        return streams.filter(s => s.url); // Return direct streams as-is
+    } catch (e) {
+        console.error(`[WebStreamr Error] ${e.message}`);
+        return [];
+    }
+}
+
+
 // ─── Dedup + Build Streams ───────────────────────────────
 const QUALITY_RANKS = {
     '2160P': 7,
@@ -534,12 +551,14 @@ builder.defineStreamHandler(async ({ type, id }) => {
                 torrentioResults,
                 tpbPlusResults,
                 tpbImdbResults,
+                webstreamrResults,
             ] = await Promise.all([
                 getMeta(id, 'movie').catch(() => null),
                 ytsImdbLookup(id).catch(() => []),
                 fetchTorrentio('movie', id).catch(() => []),
                 fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'movie', id).catch(() => []),
                 tpbImdbLookup(id).catch(() => []),
+                fetchWebStreamr('movie', id).catch(() => []),
             ]);
 
             const allTorrents = [
@@ -575,12 +594,15 @@ builder.defineStreamHandler(async ({ type, id }) => {
                 }
             }
 
-            if (allTorrents.length === 0) {
-                console.log('[Stream] No movie torrents found from any source');
+            if (allTorrents.length === 0 && (!webstreamrResults || webstreamrResults.length === 0)) {
+                console.log('[Stream] No movie streams found from any source');
                 return { streams: [] };
             }
 
             const streams = buildStreams(allTorrents, baseUrl);
+            if (webstreamrResults && webstreamrResults.length > 0) {
+                streams.unshift(...webstreamrResults);
+            }
             console.log(`[Stream] → ${streams.length} movie streams (${allTorrents.length} raw hits joined)`);
             return { streams };
 
@@ -596,12 +618,15 @@ builder.defineStreamHandler(async ({ type, id }) => {
             const sShort = season.replace(/^0/, '');
             const eShort = episode.replace(/^0/, '');
 
-            const sources1 = await Promise.allSettled([
+            const sources1Promise = Promise.allSettled([
                 eztvSearch(imdbId, season, episode),
                 fetchTorrentio('series', id),
                 fetchStremioAddon('TPB+', 'https://thepiratebay-plus.strem.fun', 'series', id),
                 tpbImdbLookup(imdbId),
             ]);
+            const webstreamrPromise = fetchWebStreamr('series', id).catch(() => []);
+
+            const [sources1, webstreamrResults] = await Promise.all([sources1Promise, webstreamrPromise]);
 
             const allTorrents = [];
             for (const s of sources1) {
@@ -631,12 +656,15 @@ builder.defineStreamHandler(async ({ type, id }) => {
                 if (s.status === 'fulfilled' && s.value.length > 0) allTorrents.push(...s.value);
             }
 
-            if (allTorrents.length === 0) {
-                console.log(`[Stream] No series torrents found for ${showName || imdbId} S${season}E${episode}`);
+            if (allTorrents.length === 0 && (!webstreamrResults || webstreamrResults.length === 0)) {
+                console.log(`[Stream] No series streams found for ${showName || imdbId} S${season}E${episode}`);
                 return { streams: [] };
             }
 
             const streams = buildStreams(allTorrents, baseUrl);
+            if (webstreamrResults && webstreamrResults.length > 0) {
+                streams.unshift(...webstreamrResults);
+            }
             console.log(`[Stream] → ${streams.length} series streams (${allTorrents.length} raw hits joined)`);
             return { streams };
         }
