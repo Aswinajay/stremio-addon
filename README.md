@@ -56,7 +56,7 @@ When RAM recovers and stabilizes, the addon implements a 30-second cooldown befo
 Deploying your own private Stremio server takes less than 2 minutes.
 
 ### Method 1: Deploy to Render.com (Recommended)
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Aswinajay/stremio-addon)
 1. Fork or clone this repository to your GitHub account.
 2. Sign up at [Render.com](https://render.com/).
 3. Click **New** → **Web Service** → Connect your GitHub repository.
@@ -68,6 +68,7 @@ Deploying your own private Stremio server takes less than 2 minutes.
 5. Click **Deploy Web Service** and wait for it to go live.
 
 ### Method 2: Hugging Face Spaces (FREE 16GB RAM! 🚀)
+[![Deploy to Spaces](https://huggingface.co/datasets/huggingface/badges/resolve/main/deploy-to-spaces-lg.svg)](https://huggingface.co/new-space?template=Aswinajay/stremio-addon)
 This is currently the best "High RAM" free option. It offers **16GB RAM**, which is 32x more than Render's free tier.
 
 1.  **Sign up** at [huggingface.co](https://huggingface.co/).
@@ -129,13 +130,17 @@ Don't want to deploy your own? You can use my public, maintained instance of **T
 
 ---
 
-## ☕ Support the Development
+---
 
-Building and maintaining high-performance bypasses for free-tier constraints takes a lot of time and coffee. If this addon improved your streaming experience and saved you money on Debrid services, please consider supporting the developer!
+## 💰 Support & Referral Links
 
-<a href="https://www.buymeacoffee.com/withaswin" target="_blank">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;">
-</a>
+If you enjoyed this addon, please consider using these referral links. It helps me maintain the project and usually gives you a bonus too!
+
+- **🚀 Render.com**: [Sign up for Render](YOUR_RENDER_REFERRAL_URL_HERE) — High-performance cloud hosting.
+- **⚡ Zeabur**: [Sign up for Zeabur](YOUR_ZEABUR_REFERRAL_URL_HERE) — Easiest way to deploy your own addon.
+- **💎 Real-Debrid**: [Get Real-Debrid](YOUR_REAL_DEBRID_REFERRAL_URL_HERE) — Unlock premium streaming speeds.
+- **📦 AllDebrid**: [Get AllDebrid](YOUR_ALLDEBRID_REFERRAL_URL_HERE) — Great alternative for high-speed streaming.
+- **☕ Buy Me A Coffee**: [buymeacoffee.com/withaswin](https://www.buymeacoffee.com/withaswin) — Support the developer directly!
 
 ---
 
