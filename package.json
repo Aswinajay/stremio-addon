@@ -1,6 +1,6 @@
 {
     "name": "torrent-to-weblink",
-    "version": "1.0.0",
+    "version": "4.0.0",
     "description": "Stremio addon that streams torrents through Render.com — buffer-free movies & series",
     "main": "server.js",
     "scripts": {

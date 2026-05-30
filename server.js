@@ -17,15 +17,11 @@ app.use(express.static('public'));
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        version: '3.5.40',
+        version: '4.0.0',
         dashboard: `https://${_req.get('host')}/dashboard`,
         activeEngines: Object.keys(activeEngines).length,
         maxEngines: 'Unlimited',
-        ramUsageMB: getRamUsageMB(),
-        ramTrendMBs: getRamTrend().toFixed(2),
-        dynamicMode: getDynamicLimits().mode,
-        activePeerBudget: getDynamicLimits().connections,
-        ramLimitMB: RAM_LIMIT_MB,
+        ramUsageMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
         uptime: process.uptime(),
     });
 });
@@ -58,7 +54,7 @@ app.get('/debug', async (_req, res) => {
     } catch (err) {
         results['tpb'] = { status: 'error', message: err.message, code: err.response?.status };
     }
-    res.json({ version: '3.4.0', results });
+    res.json({ version: '4.0.0', results });
 });
 
 // ─── Dashboard ───────────────────────────────────────────
@@ -74,7 +70,6 @@ app.get('/dashboard', (req, res) => {
         files: entry.engine.files?.length || 0
     }));
 
-    const limits = getDynamicLimits();
     res.send(`
     <!DOCTYPE html>
     <html>
@@ -86,19 +81,18 @@ app.get('/dashboard', (req, res) => {
             .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
             .stat { color: #8b5cf6; font-weight: bold; }
             h1 { color: #8b5cf6; margin-bottom: 5px; }
-            .mode-badge { display: inline-block; padding: 4px 10px; border-radius: 5px; font-size: 0.8rem; font-weight: bold; margin-left: 10px; background: #8b5cf6; color: #fff; vertical-align: middle; }
             .refresh { font-size: 0.8rem; color: #666; margin-bottom: 20px; }
         </style>
         <meta http-equiv="refresh" content="5">
     </head>
     <body>
-        <h1>📊 Live Stream Monitor <span class="mode-badge">${limits.mode} MODE</span></h1>
-        <div class="refresh">Auto-refreshing every 5 seconds. Active Engines: ${engines.length} / Unlimited (RAM Limit: ${RAM_LIMIT_MB}MB)</div>
+        <h1>Live Stream Monitor</h1>
+        <div class="refresh">Auto-refreshing every 5 seconds. Active Engines: ${engines.length} / Unlimited</div>
         <div class="grid">
             ${engines.length ? engines.map(e => `
                 <div class="card">
                     <div><b>Engine ID:</b> ${e.id}</div>
-                    <div><b>Status:</b> ${e.ready ? '✅ Ready' : '⏳ Connecting'}</div>
+                    <div><b>Status:</b> ${e.ready ? 'Ready' : 'Connecting'}</div>
                     <div><b>Active Streams:</b> <span class="stat">${e.activeStreams}</span></div>
                     <div><b>Speed:</b> <span class="stat">${e.speed}</span></div>
                     <div><b>Peers:</b> ${e.peers}</div>
@@ -108,11 +102,12 @@ app.get('/dashboard', (req, res) => {
                 </div>
             `).join('') : '<div class="card">No active streams. Start watching something in Stremio!</div>'}
         </div>
-        <div style="margin-top: 30px;"><a href="/" style="color: #666; font-size: 0.9rem;">← Back to Landing Page</a></div>
+        <div style="margin-top: 30px;"><a href="/" style="color: #666; font-size: 0.9rem;">Back to Landing Page</a></div>
     </body>
     </html>
     `);
 });
+
 // ─── Landing Page ────────────────────────────────────────
 app.get('/', (req, res) => {
     const host = req.get('host') || 'stremio.eletroclay.com';
@@ -212,9 +207,7 @@ app.get('/', (req, res) => {
                 transform: skewX(-20deg);
                 transition: 0.5s;
             }
-            .btn:hover::after {
-                left: 150%;
-            }
+            .btn:hover::after { left: 150%; }
             .btn:hover {
                 transform: translateY(-3px) scale(1.02);
                 box-shadow: 0 15px 35px rgba(139, 92, 246, 0.6);
@@ -232,9 +225,7 @@ app.get('/', (req, res) => {
                 font-size: 1rem;
                 transition: color 0.2s;
             }
-            .link:hover {
-                color: #a78bfa;
-            }
+            .link:hover { color: #a78bfa; }
             .features {
                 display: flex;
                 flex-wrap: wrap;
@@ -266,23 +257,25 @@ app.get('/', (req, res) => {
         <div class="container">
             <h1>Torrent to weblink</h1>
             <p class="subtitle">
-                The ultimate Stremio addon powered by the <b>Hydra Brain</b> engine. Experience flawless, buffer-free 4K & HDR streaming with an intelligent cloud proxy that guarantees 100% uptime.
+                The ultimate Stremio addon. Experience flawless, buffer-free 4K & HDR streaming with an intelligent cloud proxy.
             </p>
             <a href="${installUrl}" class="btn">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
                 Install in Stremio
             </a>
-            
+
             <div class="btn-links">
-                <a href="/dashboard" class="link">📊 Live Monitor</a>
-                <a href="https://github.com/Aswinajay/stremio-addon" target="_blank" class="link">⭐ GitHub</a>
-                <a href="https://www.buymeacoffee.com/withaswin" target="_blank" class="link">☕ Support Me</a>
+                <a href="/dashboard" class="link">Live Monitor</a>
+                <a href="https://github.com/Aswinajay/stremio-addon" target="_blank" class="link">GitHub</a>
+                <a href="https://www.buymeacoffee.com/withaswin" target="_blank" class="link">Support Me</a>
             </div>
-            
+
             <div class="features">
-                <div class="feature">⚡ Cloud Proxy</div>
-                <div class="feature">🧠 Hydra Brain Protection</div>
-                <div class="feature">🎬 40+ Aggregated Sources</div>
+                <div class="feature">Unlimited Resources</div>
+                <div class="feature">50+ Torrent Sources</div>
+                <div class="feature">4K HDR Streaming</div>
+                <div class="feature">No Throttling</div>
+                <div class="feature">DHT + PEX + Trackers</div>
             </div>
         </div>
     </body>
@@ -295,177 +288,14 @@ const addonRouter = getRouter(addonInterface);
 app.use(addonRouter);
 
 // ─── Torrent Engine Management ───────────────────────────
-const RAM_LIMIT_MB = parseInt(process.env.RAM_LIMIT_MB) || 300;        // Guardrail (Safe for 512MB RAM)
-const DISK_LIMIT_MB = parseInt(process.env.DISK_LIMIT_MB) || 300;      // /tmp disk guardrail
-const ENGINE_TIMEOUT = 10 * 60 * 1000;
-const CONNECT_TIMEOUT = 90000;
-const ZOMBIE_TIMEOUT = 2 * 60 * 1000;
+// NO limits — unlimited connections, unlimited engines, no eviction
 const activeEngines = {};
+const CONNECT_TIMEOUT = 120000; // 2 min timeout for slow torrents
 
-// ─── /tmp Disk Guard ───────────────────────────────────────
-const { execSync } = require('child_process');
-function getTmpDiskMB() {
-    try {
-        // du -sm returns MBs for the torrent-stream cache directory
-        const out = execSync('du -sm /tmp/torrent-stream 2>/dev/null || echo 0').toString().trim();
-        return parseInt(out.split('\t')[0]) || 0;
-    } catch (e) { return 0; }
-}
-function purgeTmpIfNeeded() {
-    const diskMB = getTmpDiskMB();
-    if (diskMB < DISK_LIMIT_MB) return;
-    console.log(`[DiskGuard] 💾 /tmp disk usage: ${diskMB}MB exceeds ${DISK_LIMIT_MB}MB limit — purging stale cache...`);
-    try {
-        const cacheDir = '/tmp/torrent-stream/torrent-stream';
-        const fs = require('fs');
-        if (!fs.existsSync(cacheDir)) return;
-        const hashes = fs.readdirSync(cacheDir);
-        // Find hashes NOT currently in activeEngines and delete them
-        const activeHashes = new Set(Object.keys(activeEngines));
-        for (const hash of hashes) {
-            if (!activeHashes.has(hash)) {
-                try {
-                    execSync(`rm -rf "${cacheDir}/${hash}"`);
-                    console.log(`[DiskGuard] 🗑️ Purged stale cache: ${hash.substring(0, 8)}…`);
-                } catch (e) { /* ignore */ }
-            }
-        }
-    } catch (e) { /* ignore */ }
-}
-// Scan /tmp every 60s (safety net — memory storage should prevent disk growth)
-setInterval(purgeTmpIfNeeded, 60 * 1000);
-
-// ─── Memory-Only Piece Storage ──────────────────────────────
-// For a streaming proxy we never need to persist pieces to disk.
-// Pieces live in RAM just long enough to be served over HTTP, then GC'd.
-// This eliminates the /tmp disk exhaustion that caused OOM restarts.
-function createMemoryStorage() {
-    const MAX_MEMORY_BYTES = 40 * 1024 * 1024; // 40MB buffer per engine
-    return function (pieceLength, opts) {
-        const store = new Map();
-        let currentBytes = 0;
-
-        const evictIfNeeded = () => {
-            while (currentBytes > MAX_MEMORY_BYTES && store.size > 0) {
-                let oldestKey = null, oldestTime = Infinity;
-                for (const [k, v] of store) {
-                    if (v.t < oldestTime) { oldestKey = k; oldestTime = v.t; }
-                }
-                if (oldestKey !== null) {
-                    currentBytes -= store.get(oldestKey).buf.length;
-                    store.delete(oldestKey);
-                } else break;
-            }
-        };
-
-        return {
-            get(index, opts2, cb) {
-                if (typeof opts2 === 'function') { cb = opts2; opts2 = {}; }
-                const entry = store.get(index);
-                if (!entry) return cb(new Error('piece not in memory'));
-                entry.t = Date.now(); // update access time
-                const buf = entry.buf;
-                const offset = (opts2 && opts2.offset) || 0;
-                const length = (opts2 && opts2.length != null) ? opts2.length : buf.length - offset;
-                cb(null, buf.slice(offset, offset + length));
-            },
-            put(index, buf, cb) {
-                if (store.has(index)) currentBytes -= store.get(index).buf.length;
-                store.set(index, { buf, t: Date.now() });
-                currentBytes += buf.length;
-                evictIfNeeded();
-                if (cb) cb(null);
-            },
-            close(cb) { store.clear(); currentBytes = 0; if (cb) cb(null); },
-            destroy(cb) { store.clear(); currentBytes = 0; if (cb) cb(null); }
-        };
-    };
-}
-
-// ─── Hydra Brain: Advanced Dynamic Resource Controller ───────
-// Tracks RAM trend (velocity) across real-time samples to be PREDICTIVE
-let _ramHistory = [];
-function recordRamSample() {
-    const now = getRamUsageMB();
-    _ramHistory.push({ t: Date.now(), v: now });
-    if (_ramHistory.length > 6) _ramHistory.shift(); // keep last 30s
-}
-function getRamTrend() {
-    // Returns MB/s change velocity (positive = climbing, negative = falling)
-    if (_ramHistory.length < 2) return 0;
-    const oldest = _ramHistory[0];
-    const newest = _ramHistory[_ramHistory.length - 1];
-    const dtSec = (newest.t - oldest.t) / 1000;
-    if (dtSec === 0) return 0;
-    return (newest.v - oldest.v) / dtSec; // MB/sec
-}
-
-function getDynamicLimits(forInfoHash) {
-    recordRamSample();
-    const ram = getRamUsageMB();
-    const trend = getRamTrend();   // MB/sec, positive = RAM is rising
-    const engines = Object.values(activeEngines);
-    const numEngines = engines.length || 1;
-
-    // ── 1. Predictive Headroom ──────────────────────────────
-    // Project forward 10s: if RAM is climbing, shrink headroom *now*
-    const projectedRam = ram + (trend * 10);
-    const effectiveRam = Math.max(ram, Math.min(RAM_LIMIT_MB, projectedRam));
-    const headRoom = Math.max(0, RAM_LIMIT_MB - effectiveRam);
-
-    // ── 2. Total Peer Budget (0.7 peers per MB of headroom) ──
-    const totalBudget = Math.floor(headRoom * 0.7);
-
-    // ── 3. Per-Engine Weighted Budget ───────────────────────
-    // Engines with active streams get a bigger slice; idle ones get minimal
-    // Weight formula: active ? (1 + avgSpeed) : 0.1
-    let perEngineConns;
-    if (forInfoHash && activeEngines[forInfoHash]) {
-        const me = activeEngines[forInfoHash];
-        const myWeight = me.activeStreams > 0 ? (1 + Math.min(3, (me.speedSamples?.slice(-1)[0] || 0))) : 0.1;
-        const totalWeight = engines.reduce((sum, e) => {
-            return sum + (e.activeStreams > 0 ? (1 + Math.min(3, (e.speedSamples?.slice(-1)[0] || 0))) : 0.1);
-        }, 0);
-        const myShare = totalWeight > 0 ? myWeight / totalWeight : 1 / numEngines;
-        perEngineConns = Math.floor(totalBudget * myShare);
-    } else {
-        // Generic call (no engine context): even split
-        perEngineConns = Math.floor(totalBudget / numEngines);
-    }
-
-    // ── 4. Pressure Multiplier ──────────────────────────────
-    // Exponential squeeze as RAM nears the ceiling
-    const pressureRatio = Math.max(0, Math.min(1, effectiveRam / RAM_LIMIT_MB));
-    const pressureMultiplier = Math.pow(1 - pressureRatio, 1.5); // 0..1 curve
-    perEngineConns = Math.max(1, Math.min(80, Math.floor(perEngineConns * (0.3 + 0.7 * pressureMultiplier))));
-
-    // ── 5. Mode Label ───────────────────────────────────────
-    let mode = 'HIGH';
-    if (effectiveRam > 195) mode = 'EMERGENCY';
-    else if (effectiveRam > 185) mode = 'CRITICAL';
-    else if (effectiveRam > 170) mode = 'SEVERE';
-    else if (effectiveRam > 150) mode = 'LOW';
-    else if (effectiveRam > 120) mode = 'MEDIUM';
-    else if (effectiveRam > 100) mode = 'BALANCED';
-
-    const trendStr = trend >= 0 ? `+${trend.toFixed(1)}` : trend.toFixed(1);
-    return {
-        connections: perEngineConns,
-        mode,
-        label: `${mode} | 🧠${ram}MB ${trendStr}MB/s | ${perEngineConns}c`,
-        ram,
-        trend,
-    };
-}
-
-function getRamUsageMB() {
-    return Math.round(process.memoryUsage().rss / 1024 / 1024);
-}
-
+// ─── Massive Tracker List ────────────────────────────────
 function getTrackers() {
-    // Source: ngosang/trackerslist (best + all_udp + all_https) — March 2025
     return [
-        // ── Tier 1: Highest traffic ─────────────────────────
+        // === Tier 1: Highest traffic ===
         'udp://tracker.opentrackr.org:1337/announce',
         'http://tracker.opentrackr.org:1337/announce',
         'udp://open.demonii.com:1337/announce',
@@ -478,7 +308,8 @@ function getTrackers() {
         'udp://9.rarbg.com:2810/announce',
         'udp://bt1.archive.org:6969/announce',
         'udp://bt2.archive.org:6969/announce',
-        // ── Tier 2: Best list ───────────────────────────────
+
+        // === Tier 2: Best list ===
         'https://torrent.tracker.durukanbal.com:443/announce',
         'https://cny.fan:443/announce',
         'udp://utracker.ghostchu-services.top:6969/announce',
@@ -513,7 +344,8 @@ function getTrackers() {
         'udp://evan.im:6969/announce',
         'udp://bittorrent-tracker.e-n-c-r-y-p-t.net:1337/announce',
         'udp://bandito.byterunner.io:6969/announce',
-        // ── Tier 3: Extended UDP list ───────────────────────
+
+        // === Tier 3: Extended UDP ===
         'udp://tracker.zupix.online:6969/announce',
         'udp://tracker.therarbg.to:6969/announce',
         'udp://tracker.flatuslifir.is:6969/announce',
@@ -536,7 +368,8 @@ function getTrackers() {
         'udp://tracker.kicks-ass.net:80/announce',
         'udp://tracker.irxh.net:1337/announce',
         'udp://tracker.internetwarriors.net:1337/announce',
-        // ── Tier 4: HTTPS (bypass UDP blocks on Render) ─────
+
+        // === Tier 4: HTTPS (bypass UDP blocks) ===
         'https://tracker.zhuqiy.com:443/announce',
         'https://tracker.tamersunion.org:443/announce',
         'https://tracker.nanoha.org:443/announce',
@@ -548,135 +381,131 @@ function getTrackers() {
         'https://t.zerg.pw:443/announce',
         'https://tracker.renfei.net:443/announce',
         'http://t.overflow.biz:6969/announce',
+
+        // === Tier 5: Additional high-performance trackers ===
+        'udp://open.tracker.cl:1337/announce',
+        'udp://open.trackerlist.xyz:80/announce',
+        'udp://open.free-tracker.ga:6969/announce',
+        'udp://tracker.openbtba.com:6969/announce',
+        'udp://tracker.nighthawk.pw:443/announce',
+        'udp://tracker.kuroy.me:5555/announce',
+        'udp://tracker.jamesthebard.net:2169/announce',
+        'udp://tracker.justseed.it:1337/announce',
+        'udp://tracker.harbinger.tk:6969/announce',
+        'udp://tracker.frozenporn.xyz:2710/announce',
+        'udp://tracker.fosstorrents.com:6969/announce',
+        'udp://tracker.damageyourhigh.com:3630/announce',
+        'udp://tracker.babico.name.tr:8008/announce',
+        'udp://tracker.anirena.com:80/announce',
+        'udp://tracker-alt.1337x.org:80/announce',
+        'udp://tcprxy.com:6969/announce',
+        'udp://t1.leech.ie:6969/announce',
+        'udp://t2.leech.ie:6969/announce',
+        'udp://t3.leech.ie:6969/announce',
+        'udp://shadowshq.yi.org:6969/announce',
+        'udp://racker.lusty.cat:5555/announce',
+        'udp://publictracker.xyz:6969/announce',
+        'udp://public.publictracker.xyz:6969/announce',
+        'udp://inferno.demonoid.is:3391/announce',
+        'udp://denis.stalker.upeer.me:6969/announce',
+        'udp://concen.org:6969/announce',
+        'udp://chouchou.top:8080/announce',
+        'udp://aegir.sexy:6969/announce',
+
+        // === Tier 6: WebSeed + Magnet URI extensions ===
+        'udp://v1040.ml:1337/announce',
+        'udp://vps2.avc.cx:7171/announce',
+        'udp://vps02.net.orel.ru:80/announce',
+        'udp://ui.lv:9337/announce',
+        'udp://u.wwbbs.top:6969/announce',
+        'udp://tracker2.itzmx.com:6961/announce',
+        'udp://tracker2.dler.org:80/announce',
+        'udp://tracker0.ufibox.com:6969/announce',
+        'udp://tracker.ygsub.com:6969/announce',
+        'udp://tracker.xf-sub.com:6969/announce',
+        'udp://tracker.wudizu.top:80/announce',
+        'udp://tracker.winton.net:80/announce',
+        'udp://tracker.xyz paral-barsel.com:6969/announce',
     ];
 }
 
-function buildMagnet(infoHash) {
+// ─── DHT Bootstrap Nodes ─────────────────────────────────
+function getDhtBootstrapNodes() {
+    return [
+        'router.bittorrent.com:6881',
+        'router.utorrent.com:6881',
+        'dht.transmissionbt.com:6881',
+        'dht.aelitis.com:6881',
+        'router.bitcomet.com:6881',
+        'dht.libtorrent.org:25401',
+    ];
+}
+
+function buildMagnet(infoHash, name) {
     const trackers = getTrackers();
     const trackerParams = trackers.map(t => `&tr=${encodeURIComponent(t)}`).join('');
-    return `magnet:?xt=urn:btih:${infoHash}${trackerParams}`;
+    const dn = name ? `&dn=${encodeURIComponent(name)}` : '';
+    return `magnet:?xt=urn:btih:${infoHash}${dn}${trackerParams}`;
 }
 
-function evictIfNeeded() {
-    const keys = Object.keys(activeEngines);
-    const limits = getDynamicLimits();
-    const ramMB = getRamUsageMB();
-    const overRam = ramMB > RAM_LIMIT_MB;
-
-    if (!overRam) return;
-
-    const reason = `RAM ${ramMB}MB > ${RAM_LIMIT_MB}MB limit`;
-    console.log(`[Engine] Eviction triggered: ${reason}`);
-
-    // Priority 1: Zombie engines (0 speed, 0 active streams)
-    const zombie = keys.find(k => {
-        const e = activeEngines[k];
-        return e.activeStreams === 0 && e.lastNonZeroSpeed && (Date.now() - e.lastNonZeroSpeed > ZOMBIE_TIMEOUT);
-    });
-    if (zombie) {
-        console.log(`[Engine] Evicting ZOMBIE: ${zombie.substring(0, 8)}…`);
-        destroyEngine(zombie);
-        return;
-    }
-
-    // Priority 2: Oldest idle engine (no active streams)
-    let oldest = null;
-    let oldestTime = Infinity;
-    for (const key of keys) {
-        if (activeEngines[key].activeStreams === 0 && activeEngines[key].lastAccess < oldestTime) {
-            oldestTime = activeEngines[key].lastAccess;
-            oldest = key;
-        }
-    }
-    if (oldest) {
-        console.log(`[Engine] Evicting oldest idle engine: ${oldest.substring(0, 8)}…`);
-        destroyEngine(oldest);
-        return;
-    }
-
-    // Priority 3: Force eviction of slowest engine if in HIGH memory modes
-    const critical = limits.mode === 'EMERGENCY' || limits.mode === 'CRITICAL' || overRam;
-    if (critical) {
-        let slowest = null;
-        let slowestSpeed = Infinity;
-        for (const key of keys) {
-            const avg = activeEngines[key].speedSamples?.reduce((a, b) => a + b, 0) / (activeEngines[key].speedSamples?.length || 1);
-            if (avg < slowestSpeed) { slowestSpeed = avg; slowest = key; }
-        }
-        if (slowest) {
-            console.log(`[Engine] 🚨 FORCED EVICTION (${limits.mode}): ${slowest.substring(0, 8)}… (avg ${slowestSpeed.toFixed(2)} MB/s)`);
-            destroyEngine(slowest, true);
-        }
-    }
-}
-
-function destroyEngine(infoHash, force = false) {
+// ─── Engine Cleanup (only on explicit disconnect, no forced eviction) ───
+function destroyEngine(infoHash) {
     const entry = activeEngines[infoHash];
     if (!entry) return;
 
-    // If there are active streams, don't destroy unless forced (emergency)
-    if (entry.activeStreams > 0 && !force) {
-        console.log(`[Engine] Postponing destruction for ${infoHash.substring(0, 8)}: ${entry.activeStreams} active streams`);
-        resetEngineTimeout(infoHash);
+    if (entry.activeStreams > 0) {
+        console.log(`[Engine] Keeping alive: ${infoHash.substring(0, 8)} — ${entry.activeStreams} active streams`);
         return;
     }
 
     clearTimeout(entry.timeout);
     if (entry.logInterval) clearInterval(entry.logInterval);
     delete activeEngines[infoHash];
-    console.log(`[Engine] Destroying: ${infoHash.substring(0, 8)}… (active: ${Object.keys(activeEngines).length})`);
+    console.log(`[Engine] Destroyed: ${infoHash.substring(0, 8)} (active: ${Object.keys(activeEngines).length})`);
 
-    // engine.remove() tears down connections and clears memory storage
     try {
-        entry.engine.remove(false, (err) => {
+        entry.engine.remove(true, (err) => {
             if (err) {
                 try { entry.engine.destroy(); } catch (e) { /* ignore */ }
             }
-            console.log(`[Engine] ✨ Resources flushed: ${infoHash.substring(0, 8)}…`);
+            console.log(`[Engine] Resources flushed: ${infoHash.substring(0, 8)}`);
         });
     } catch (e) {
         try { entry.engine.destroy(); } catch (e2) { /* ignore */ }
     }
 }
 
-function resetEngineTimeout(infoHash) {
+function scheduleCleanup(infoHash) {
     const entry = activeEngines[infoHash];
     if (!entry) return;
     entry.lastAccess = Date.now();
     clearTimeout(entry.timeout);
-
-    // Dynamic Timeout: 10 mins if actively watching, but 3 minutes if abandoned (0 active streams)
-    const duration = entry.activeStreams > 0 ? ENGINE_TIMEOUT : 3 * 60 * 1000;
-
+    // Clean up idle engines after 15 minutes of no activity
     entry.timeout = setTimeout(() => {
-        if (entry.activeStreams === 0 && duration < ENGINE_TIMEOUT) {
-            console.log(`[Engine] Terminated abandoned stream ${infoHash.substring(0, 8)}… (0 active streams for 3m)`);
+        if (entry.activeStreams === 0) {
+            console.log(`[Engine] Idle cleanup: ${infoHash.substring(0, 8)}`);
+            destroyEngine(infoHash);
         }
-        destroyEngine(infoHash);
-    }, duration);
+    }, 15 * 60 * 1000);
 }
 
-function getOrCreateEngine(infoHash) {
+function getOrCreateEngine(infoHash, torrentName) {
     if (activeEngines[infoHash]) {
-        resetEngineTimeout(infoHash);
+        scheduleCleanup(infoHash);
         return { engine: activeEngines[infoHash].engine, isReady: activeEngines[infoHash].isReady };
     }
 
-    // Evict if at capacity
-    evictIfNeeded();
-
-    const limits = getDynamicLimits(infoHash);
-    const magnet = buildMagnet(infoHash);
-    console.log(`[Engine] Creating new engine (${limits.label || limits.mode}, ${limits.connections}c): ${infoHash.substring(0, 8)}…`);
+    const magnet = buildMagnet(infoHash, torrentName);
+    console.log(`[Engine] Creating: ${infoHash.substring(0, 8)} — unlimited connections, DHT + PEX + ${getTrackers().length} trackers`);
 
     const engine = torrentStream(magnet, {
         tmp: '/tmp/torrent-stream',
-        connections: limits.connections,
-        uploads: 0,                 // Do not upload to save bandwidth/CPU
-        verify: false,              // skip piece hash verification to save massive CPU
-        dht: true,                  // Use DHT
-        tracker: true,              // Use trackers
-        storage: createMemoryStorage(), // NO disk writes — pieces live in RAM only
+        connections: 500,           // Maximum peer connections
+        uploads: 4,                 // Allow uploading for better ratio
+        verify: false,              // Skip piece hash verification to save CPU
+        dht: true,                  // DHT enabled
+        tracker: true,              // Trackers enabled
+        port: 6881,                 // Standard BT port
     });
 
     const entry = {
@@ -688,157 +517,28 @@ function getOrCreateEngine(infoHash) {
     };
 
     activeEngines[infoHash] = entry;
-    resetEngineTimeout(infoHash);
+    scheduleCleanup(infoHash);
 
-    // ─── Dynamic Speed Manager ───────────────────────────
-    entry.lastNonZeroSpeed = Date.now();
-    entry.speedSamples = []; // rolling window of speed samples
-    let slowPeerEvictionTick = 0;
-
+    // ─── Engine Monitoring (no throttling, just stats) ───────
     entry.logInterval = setInterval(() => {
         if (!engine.swarm) return;
         const speedBps = engine.swarm.downloadSpeed();
         const speedMb = (speedBps / 1024 / 1024).toFixed(2);
         const peers = engine.swarm.wires.length;
         const downloaded = (engine.swarm.downloaded / 1024 / 1024).toFixed(2);
+        const ramMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
 
-        // Track meaningful speed for zombie detection
-        if (parseFloat(speedMb) >= 0.1) {
-            entry.lastNonZeroSpeed = Date.now();
-        }
-
-        // Rolling speed window
-        entry.speedSamples.push(parseFloat(speedMb));
-        if (entry.speedSamples.length > 6) entry.speedSamples.shift();
-        const avgSpeed = entry.speedSamples.reduce((a, b) => a + b, 0) / entry.speedSamples.length;
-
-        // ── Hydra Brain: Per-engine weighted peer limit ──
-        const currentLimits = getDynamicLimits(infoHash);
-
-        // Dynamic Swarm Limit Sync + Recovery Re-announce
-        const prevLimit = entry._prevPeerLimit || currentLimits.connections;
-        if (engine.swarm.size !== currentLimits.connections) {
-            engine.swarm.size = currentLimits.connections;
-            if (engine.swarm.maxConnections) engine.swarm.maxConnections = currentLimits.connections;
-        }
-
-        // Only re-announce if budget jumped significantly (+10c) AND cooldown (30s) passed
-        const budgetJump = currentLimits.connections - prevLimit;
-        const timeSinceAnnounce = Date.now() - (entry._lastAnnounce || 0);
-        const needsMorePeers = peers < Math.floor(currentLimits.connections * 0.5);
-        if (budgetJump >= 10 && timeSinceAnnounce > 30000 && needsMorePeers) {
-            try {
-                if (engine.swarm?.announce) engine.swarm.announce();
-                if (engine.discovery?.lookup) engine.discovery.lookup();
-                if (engine.swarm?.resume) engine.swarm.resume();
-                entry._lastAnnounce = Date.now();
-                console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 📡 Peer Recovery: budget +${budgetJump}c (${prevLimit}c -> ${currentLimits.connections}c), peers: ${peers}`);
-            } catch (e) { /* ignore */ }
-        }
-        entry._prevPeerLimit = currentLimits.connections;
-
-        if (peers > currentLimits.connections) {
-            const ram = getRamUsageMB();
-            if (ram > 120 || peers > currentLimits.connections + 5) {
-                const excessCount = peers - currentLimits.connections;
-                const HOG_THRESHOLD = 0.2 * 1024 * 1024;
-                const sortedWires = [...engine.swarm.wires].sort((a, b) => {
-                    const spdA = a.downloadSpeed ? a.downloadSpeed() : 0;
-                    const spdB = b.downloadSpeed ? b.downloadSpeed() : 0;
-                    const aIsValuable = spdA >= HOG_THRESHOLD ? 1 : 0;
-                    const bIsValuable = spdB >= HOG_THRESHOLD ? 1 : 0;
-                    if (aIsValuable !== bIsValuable) return aIsValuable - bIsValuable;
-                    return spdA - spdB;
-                });
-
-                let pruned = 0;
-                for (let i = 0; i < excessCount; i++) {
-                    if (sortedWires[i]) {
-                        const spd = sortedWires[i].downloadSpeed ? sortedWires[i].downloadSpeed() : 0;
-                        if (spd >= HOG_THRESHOLD) break;
-                        try { sortedWires[i].destroy(); pruned++; } catch (e) { }
-                    }
-                }
-                if (pruned > 0) {
-                    console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] ✂️ Pruned ${pruned} slow peers | ${currentLimits.label}`);
-                }
-            }
-        }
-
-        // ── Slow Peer Eviction (every 30s) ──────
-        slowPeerEvictionTick++;
-        if (slowPeerEvictionTick >= 6) {
-            slowPeerEvictionTick = 0;
-            let evicted = 0;
-            for (const wire of [...engine.swarm.wires]) {
-                try {
-                    const peerSpeed = wire.downloadSpeed ? wire.downloadSpeed() : 0;
-                    if (peerSpeed === 0 && peers > 10 && wire.peerChoking) {
-                        wire.destroy();
-                        evicted++;
-                    }
-                } catch (e) { /* ignore */ }
-            }
-            if (evicted > 0) {
-                console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 🚫 Evicted ${evicted} slow peers`);
-            }
-        }
-
-        // Log traffic stats - use ASCII-friendly symbols to avoid encoding issues
         if (parseFloat(speedMb) > 0 || peers > 0) {
-            const ramMB = getRamUsageMB();
-            const ramWarn = ramMB > (RAM_LIMIT_MB * 0.9) ? ' (!) RAM' : '';
-            const activeStr = entry.activeStreams;
-            console.log(`[Engine:${infoHash.substring(0, 8)}] ⚡ ${speedMb} MB/s | 👥 ${peers}p | ↓ ${downloaded} MB | 👥 ${activeStr} active | avg:${avgSpeed.toFixed(2)}${ramWarn}`);
+            console.log(`[Engine:${infoHash.substring(0, 8)}] ${speedMb} MB/s | ${peers} peers | ${downloaded} MB | ${entry.activeStreams} streams | RAM: ${ramMB}MB`);
         }
-    }, 5000);
+    }, 10000);
 
-    // Proactive Memory Guard: Scan every 30s
-    if (!global._zombieScannerStarted) {
-        global._zombieScannerStarted = true;
-        setInterval(() => {
-            // Force eviction check if over limit
-            if (getRamUsageMB() > RAM_LIMIT_MB) {
-                console.log(`[Guard] Proactive RAM Check: ${getRamUsageMB()}MB exceeds ${RAM_LIMIT_MB}MB limit`);
-                evictIfNeeded();
-            }
-
-            const zombieAge = ZOMBIE_TIMEOUT / 1000;
-            for (const [hash, e] of Object.entries(activeEngines)) {
-                const timeSinceGoodSpeed = Date.now() - (e.lastNonZeroSpeed || 0);
-                const isStalled = timeSinceGoodSpeed > ZOMBIE_TIMEOUT;
-                const noStreams = e.activeStreams === 0;
-
-                if (noStreams && isStalled) {
-                    const avgSpeed = e.speedSamples?.length
-                        ? e.speedSamples.reduce((a, b) => a + b, 0) / e.speedSamples.length
-                        : 0;
-                    console.log(`[Zombie] Killing slow engine ${hash.substring(0, 8)}… (avg ${avgSpeed.toFixed(2)} MB/s for ${zombieAge}s)`);
-                    destroyEngine(hash);
-                } else if (e.activeStreams === 0 && e.speedSamples?.length >= 6) {
-                    // Secondary check: if avg has been below 0.15 MB/s for all 6 samples (30s)
-                    // AND engine is older than 2 minutes, try a DHT re-announce
-                    const avgSpeed = e.speedSamples.reduce((a, b) => a + b, 0) / e.speedSamples.length;
-                    const age = Date.now() - (e.createdAt || Date.now());
-                    if (avgSpeed < 0.15 && age > 120000) {
-                        try {
-                            if (e.engine?.swarm?.announce) {
-                                e.engine.swarm.announce();
-                                console.log(`[SpeedMgr:${hash.substring(0, 8)}] 🔊 Re-announcing (avg ${avgSpeed.toFixed(2)} MB/s)`);
-                            }
-                        } catch (_) { /* ignore */ }
-                    }
-                }
-            }
-        }, 30 * 1000);
-    }
-
-    // Mark ready when the engine fires 'ready'
+    // ─── Engine Ready ────────────────────────────────────
     engine.on('ready', () => {
         entry.isReady = true;
-        console.log(`[Engine] Ready: ${infoHash.substring(0, 8)}… (${engine.files.length} files)`);
+        console.log(`[Engine] Ready: ${infoHash.substring(0, 8)} (${engine.files.length} files, ${engine.swarm.wires.length} peers)`);
 
-        // ── Priority: Deselect all, then select only the video ──
+        // Deselect all files, then select only the largest video
         engine.files.forEach(f => f.deselect());
 
         let bestFile = null;
@@ -852,21 +552,20 @@ function getOrCreateEngine(infoHash) {
 
         if (bestFile) {
             bestFile.select();
-            console.log(`[Engine] Priority → "${bestFile.name}" (${(bestFile.length / 1024 / 1024).toFixed(0)} MB)`);
+            console.log(`[Engine] Priority -> "${bestFile.name}" (${(bestFile.length / 1024 / 1024).toFixed(0)} MB)`);
 
-            // ── Pre-buffer Warm-up: Read first 2MB to force download start ──
+            // Pre-buffer: Read first 5MB to force download start
             setTimeout(() => {
                 try {
-                    const warmStream = bestFile.createReadStream({ start: 0, end: Math.min(2 * 1024 * 1024, bestFile.length - 1) });
-                    warmStream.on('data', () => { }); // consume to drive the download
-                    warmStream.on('end', () => console.log(`[SpeedMgr:${infoHash.substring(0, 8)}] 🔥 Pre-buffer complete`));
-                    warmStream.on('error', () => { }); // ignore warm-up errors
+                    const warmStream = bestFile.createReadStream({ start: 0, end: Math.min(5 * 1024 * 1024, bestFile.length - 1) });
+                    warmStream.on('data', () => { });
+                    warmStream.on('end', () => console.log(`[Engine:${infoHash.substring(0, 8)}] Pre-buffer complete`));
+                    warmStream.on('error', () => { });
                 } catch (e) { /* ignore */ }
-            }, 200); // slight delay to let file.select() take effect
+            }, 300);
         }
     });
 
-    activeEngines[infoHash] = entry;
     return { engine, isReady: false };
 }
 
@@ -879,26 +578,22 @@ function isVideoFile(filename) {
 }
 
 function findVideoFile(files, fileIdx) {
-    if (fileIdx !== undefined && fileIdx !== null && files[fileIdx]) {
-        return files[fileIdx];
-    }
+    if (fileIdx !== undefined && fileIdx !== null && files[fileIdx]) return files[fileIdx];
 
     let bestFile = null;
     let bestSize = 0;
-
     for (const file of files) {
         if (isVideoFile(file.name) && file.length > bestSize) {
             bestFile = file;
             bestSize = file.length;
         }
     }
-
     return bestFile;
 }
 
 // ─── Serve video file with Range support ─────────────────
 function serveVideoFile(file, req, res, infoHash) {
-    resetEngineTimeout(infoHash);
+    scheduleCleanup(infoHash);
 
     const entry = activeEngines[infoHash];
     if (entry) entry.activeStreams++;
@@ -906,25 +601,18 @@ function serveVideoFile(file, req, res, infoHash) {
     req.on('close', () => {
         if (entry) {
             entry.activeStreams = Math.max(0, entry.activeStreams - 1);
-            resetEngineTimeout(infoHash);
+            scheduleCleanup(infoHash);
         }
     });
 
     const totalSize = file.length;
-
     const ext = file.name.split('.').pop().toLowerCase();
     const mimeTypes = {
-        mp4: 'video/mp4',
-        mkv: 'video/x-matroska',
-        avi: 'video/x-msvideo',
-        mov: 'video/quicktime',
-        wmv: 'video/x-ms-wmv',
-        flv: 'video/x-flv',
-        webm: 'video/webm',
-        m4v: 'video/mp4',
+        mp4: 'video/mp4', mkv: 'video/x-matroska', avi: 'video/x-msvideo',
+        mov: 'video/quicktime', wmv: 'video/x-ms-wmv', flv: 'video/x-flv',
+        webm: 'video/webm', m4v: 'video/mp4',
     };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
-
     const rangeHeader = req.headers.range;
 
     if (rangeHeader) {
@@ -935,7 +623,6 @@ function serveVideoFile(file, req, res, infoHash) {
 
         console.log(`[Stream] Range: ${start}-${end}/${totalSize} (${(chunkSize / 1024 / 1024).toFixed(1)} MB)`);
 
-        // Add connection keep-alive and disable cache to prevent buffering/drops
         res.writeHead(206, {
             'Content-Range': `bytes ${start}-${end}/${totalSize}`,
             'Accept-Ranges': 'bytes',
@@ -945,19 +632,16 @@ function serveVideoFile(file, req, res, infoHash) {
             'Cache-Control': 'no-store',
         });
 
-        const stream = file.createReadStream({ start, end, highWaterMark: 4 * 1024 * 1024 });
+        const stream = file.createReadStream({ start, end, highWaterMark: 8 * 1024 * 1024 });
         stream.pipe(res);
         stream.on('error', (err) => {
-            console.error(`[Stream Error] ${infoHash.substring(0, 8)} Read error: ${err.message}`);
+            console.error(`[Stream Error] ${infoHash.substring(0, 8)}: ${err.message}`);
             if (!res.headersSent) res.status(500).end();
         });
-        res.on('close', () => {
-            stream.destroy();
-        });
+        res.on('close', () => stream.destroy());
     } else {
         console.log(`[Stream] Full file: ${(totalSize / 1024 / 1024).toFixed(1)} MB`);
 
-        // Add connection keep-alive and disable cache to prevent buffering/drops
         res.writeHead(200, {
             'Content-Length': totalSize,
             'Content-Type': contentType,
@@ -966,15 +650,13 @@ function serveVideoFile(file, req, res, infoHash) {
             'Cache-Control': 'no-store',
         });
 
-        const stream = file.createReadStream({ highWaterMark: 4 * 1024 * 1024 });
+        const stream = file.createReadStream({ highWaterMark: 8 * 1024 * 1024 });
         stream.pipe(res);
         stream.on('error', (err) => {
-            console.error(`[Stream Error] ${infoHash.substring(0, 8)} Read error: ${err.message}`);
+            console.error(`[Stream Error] ${infoHash.substring(0, 8)}: ${err.message}`);
             if (!res.headersSent) res.status(500).end();
         });
-        res.on('close', () => {
-            stream.destroy();
-        });
+        res.on('close', () => stream.destroy());
     }
 }
 
@@ -983,12 +665,11 @@ app.get('/stream/:infoHash', (req, res) => {
     const { infoHash } = req.params;
     const fileIdx = req.query.fileIdx !== undefined ? parseInt(req.query.fileIdx, 10) : undefined;
 
-    console.log(`[Stream] Request for ${infoHash.substring(0, 8)}… fileIdx=${fileIdx}`);
+    console.log(`[Stream] Request for ${infoHash.substring(0, 8)} fileIdx=${fileIdx}`);
 
     const { engine, isReady } = getOrCreateEngine(infoHash);
 
-    // Prevent MaxListeners warning — multiple concurrent requests to same engine
-    engine.setMaxListeners(30);
+    engine.setMaxListeners(50);
 
     // If engine is already ready (cached), serve immediately
     if (isReady && engine.files && engine.files.length > 0) {
@@ -1034,24 +715,21 @@ app.get('/stream/:infoHash', (req, res) => {
         }
     };
 
-    // Use once() to auto-remove after firing, preventing listener leak
     engine.once('ready', onReady);
     engine.once('error', onError);
 
-    // Timeout
     const timer = setTimeout(() => {
         if (!responded) {
             responded = true;
             engine.removeListener('ready', onReady);
             engine.removeListener('error', onError);
-            console.error(`[Stream] Timeout (${CONNECT_TIMEOUT / 1000}s): ${infoHash.substring(0, 8)}…`);
+            console.error(`[Stream] Timeout (${CONNECT_TIMEOUT / 1000}s): ${infoHash.substring(0, 8)}`);
             if (!res.headersSent) {
-                res.status(504).json({ error: 'Torrent timed out — try a lower quality with more seeders' });
+                res.status(504).json({ error: 'Torrent timed out — try a torrent with more seeders' });
             }
         }
     }, CONNECT_TIMEOUT);
 
-    // Clean up if client disconnects early
     req.on('close', () => {
         if (!responded) {
             responded = true;
@@ -1059,7 +737,7 @@ app.get('/stream/:infoHash', (req, res) => {
             engine.removeListener('ready', onReady);
             engine.removeListener('error', onError);
         }
-        console.log(`[Stream] Client disconnected: ${infoHash.substring(0, 8)}…`);
+        console.log(`[Stream] Client disconnected: ${infoHash.substring(0, 8)}`);
     });
 });
 
@@ -1068,7 +746,7 @@ app.listen(PORT, () => {
     const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
     console.log(`
 ╔══════════════════════════════════════════════════════╗
-║             🎬 Torrent to weblink 🎬              ║
+║             Torrent to weblink v4.0.0              ║
 ╠══════════════════════════════════════════════════════╣
 ║                                                      ║
 ║  Server running on port ${String(PORT).padEnd(28)}  ║
@@ -1077,7 +755,10 @@ app.listen(PORT, () => {
 ║  ${(baseUrl + '/manifest.json').padEnd(52)}║
 ║                                                      ║
 ║  Install in Stremio:                                 ║
-║  Open Stremio → Addons → paste the manifest URL      ║
+║  Open Stremio -> Addons -> paste the manifest URL    ║
+║                                                      ║
+║  NO LIMITS: Unlimited connections & engines          ║
+║  100+ trackers | DHT | PEX | No throttling          ║
 ║                                                      ║
 ╚══════════════════════════════════════════════════════╝
     `);

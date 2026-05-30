@@ -10,7 +10,7 @@ pinned: false
 # 🎬 Torrent to weblink — The Ultimate Stremio Addon
 
 [![Status](https://img.shields.io/badge/Status-Healthy-brightgreen?style=for-the-badge)](https://stremio.eletroclay.com/health)
-[![Version](https://img.shields.io/badge/Version-3.5.40-blue?style=for-the-badge)](https://github.com/Aswinajay/stremio-addon)
+[![Version](https://img.shields.io/badge/Version-4.0.0-blue?style=for-the-badge)](https://github.com/Aswinajay/stremio-addon)
 [![Platform](https://img.shields.io/badge/Host-Render.com-black?style=for-the-badge)](https://render.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.style=for-the-badge)](https://opensource.org/licenses/MIT)
 
