@@ -1,0 +1,7 @@
+.git
+.gitignore
+node_modules
+*.md
+render.yaml
+.vscode
+test.js
