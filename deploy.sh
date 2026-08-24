@@ -16,7 +16,7 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 # ── Deploy: cheapest autoscaling config ──────────────────────
 #   min-instances=0   -> scales to ZERO when idle ($0 while not streaming)
 #   max-instances=3   -> hard cost cap on burst scaling
-#   1 vCPU / 512Mi    -> smallest instance tier
+#   1 vCPU / 1Gi      -> smallest CPU tier with headroom for streaming
 #   request-based CPU -> billed only while requests are active
 #   timeout=3600      -> max allowed; needed for long video range requests
 #   cpu-boost         -> faster cold starts at no extra charge
@@ -27,7 +27,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --allow-unauthenticated \
   --min-instances 0 \
   --max-instances 3 \
-  --memory 512Mi \
+  --memory 1Gi \
   --cpu 1 \
   --concurrency 80 \
   --timeout 3600 \
@@ -41,7 +41,7 @@ URL="$(gcloud run services describe "$SERVICE_NAME" \
 gcloud run services update "$SERVICE_NAME" \
   --project "$PROJECT_ID" \
   --region "$REGION" \
-  --update-env-vars "RENDER_EXTERNAL_URL=${URL}"
+  --update-env-vars "PUBLIC_URL=${PUBLIC_URL:-$URL}"
 
 echo ""
 echo "Deployed: $URL"

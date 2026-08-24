@@ -56,7 +56,7 @@ const TORLOCK_MIRRORS = [
 
 // ─── Manifest ────────────────────────────────────────────
 const manifest = {
-    id: 'com.render.torrent.stream',
+    id: 'com.cloud.torrent.stream',
     version: '4.0.0',
     name: 'Torrent to weblink',
     description: 'Unlimited Resources | 50+ Scrapers | No Limits | 4K HDR',
@@ -75,11 +75,7 @@ const builder = new addonBuilder(manifest);
 
 // ─── Helpers ─────────────────────────────────────────────
 function getBaseUrl() {
-    if (process.env.RENDER_EXTERNAL_URL) return process.env.RENDER_EXTERNAL_URL;
-    if (process.env.SPACE_ID) {
-        const [user, name] = process.env.SPACE_ID.toLowerCase().split('/');
-        return `https://${user}-${name.replace(/\//g, '-')}.hf.space`;
-    }
+    if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/+$/, '');
     const port = process.env.PORT || 3000;
     return `http://localhost:${port}`;
 }
@@ -506,7 +502,7 @@ async function torrentProjectSearch(q) {
 async function zooqleSearch(q) {
     const label = '[Zooqle]';
     try {
-        const url = `https://zooqle.com/search?q=${encodeURIComponent(userAgent)}`;
+        const url = `https://zooqle.com/search?q=${encodeURIComponent(q)}`;
         const r = await axios.get(url, getAxiosOpts());
         const html = r.data || '';
         const magnets = html.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{32,40})/gi) || [];
@@ -544,8 +540,106 @@ async function katSearch(q) {
     return [];
 }
 
-// ─── Meta Sources (Stremio addons as scrapers) ───────────
+// 28. Knaben (meta search engine, JSON API)
+async function knabenSearch(q) {
+    const label = '[Knaben]';
+    const endpoints = [
+        'https://api.knaben.eu/',
+        'https://knaben.org/api/v1/search',
+        'https://knaben.eu/api/v1/search',
+    ];
+    for (const endpoint of endpoints) {
+        try {
+            const r = await axios.post(endpoint, {
+                query: q,
+                offset: 0,
+                limit: 30,
+                sorted: { seeders: 'desc' },
+            }, getAxiosOpts({ headers: { ...getAxiosOpts().headers, 'Content-Type': 'application/json' } }));
+            const items = r.data?.items || [];
+            const mapped = items.map(t => {
+                let hash = t.infoHash?.toLowerCase();
+                if (!hash && t.magnet) hash = t.magnet.match(/btih:([a-zA-Z0-9]{32,40})/i)?.[1]?.toLowerCase();
+                return {
+                    hash,
+                    title: t.title || q,
+                    size: formatSize(t.size),
+                    seeds: t.seeders || 0,
+                    source: 'Knaben',
+                };
+            }).filter(t => t.hash);
+            if (!mapped.length) continue;
+            console.log(`${label} OK ${mapped.length} via ${endpoint}`);
+            return mapped;
+        } catch (e) { /* try next */ }
+    }
+    return [];
+}
 
+// 29. BT4G (DHT index)
+async function bt4gSearch(q) {
+    const label = '[BT4G]';
+    for (const mirror of ['https://bt4gprx.com', 'https://bt4g.org']) {
+        try {
+            const url = `${mirror}/search?q=${encodeURIComponent(q)}`;
+            const r = await axios.get(url, getAxiosOpts());
+            const html = r.data || '';
+            const magnets = html.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{32,40})/gi) || [];
+            if (!magnets.length) continue;
+            console.log(`${label} OK ${magnets.length} via ${mirror}`);
+            return [...new Set(magnets)].slice(0, 25).map(m => ({
+                hash: m.split('btih:')[1].toLowerCase(),
+                title: q,
+                source: 'BT4G',
+                seeds: 3,
+            }));
+        } catch (e) { /* try next */ }
+    }
+    return [];
+}
+
+// 30. Uindex (DHT search)
+async function uindexSearch(q) {
+    const label = '[Uindex]';
+    try {
+        const url = `https://uindex.org/search.php?search=${encodeURIComponent(q)}`;
+        const r = await axios.get(url, getAxiosOpts());
+        const html = r.data || '';
+        const magnets = html.match(/magnet:\?xt=urn:btih:([a-zA-Z0-9]{32,40})/gi) || [];
+        if (!magnets.length) return [];
+        console.log(`${label} OK ${magnets.length} hashes`);
+        return [...new Set(magnets)].slice(0, 25).map(m => ({
+            hash: m.split('btih:')[1].toLowerCase(),
+            title: q,
+            source: 'Uindex',
+            seeds: 2,
+        }));
+    } catch (e) { return []; }
+}
+
+// 31. iDope (JSON API)
+async function iDopeSearch(q) {
+    const label = '[iDope]';
+    for (const api of ['https://api.idope.club', 'https://api.idope.se']) {
+        try {
+            const url = `${api}/api/search/${encodeURIComponent(q)}/0/`;
+            const r = await axios.get(url, getAxiosOpts());
+            const results = r.data?.results || r.data?.list || [];
+            if (!results.length) continue;
+            console.log(`${label} OK ${results.length} via ${api}`);
+            return results.slice(0, 25).map(t => ({
+                hash: (t.info_hash || t.infoHash || '').toLowerCase(),
+                title: t.name || q,
+                size: formatSize(t.size || t.length),
+                seeds: t.seeds || 0,
+                source: 'iDope',
+            })).filter(t => t.hash);
+        } catch (e) { /* try next */ }
+    }
+    return [];
+}
+
+// ─── Meta Sources (Stremio addons as scrapers) ───────────
 // 18. Torrentio
 async function fetchTorrentio(type, id) {
     const label = '[Torrentio]';
@@ -639,10 +733,10 @@ async function fetchStremioAddon(sourceName, baseUrl, type, id) {
         return streams.map(s => {
             const quality = parseQuality(s.name + ' ' + s.title);
             let seeds = 0;
-            const seedsMatch = s.title?.match(/[]\s*(\d+)/i) || s.name?.match(/[]\s*(\d+)/i);
+            const seedsMatch = s.title?.match(/[👤👥]\s*(\d+)/u) || s.name?.match(/[👤👥]\s*(\d+)/u);
             if (seedsMatch) seeds = parseInt(seedsMatch[1]);
             let size = '';
-            const sizeMatch = s.title?.match(/[]\s*([^]+)/) || s.name?.match(/[]\s*([^]+)/);
+            const sizeMatch = s.title?.match(/💾\s*([^\s\n]+)/u) || s.name?.match(/💾\s*([^\s\n]+)/u);
             if (sizeMatch) size = sizeMatch[1].trim();
             const title = s.title?.split('\n')[0] || s.name || sourceName;
             return { hash: s.infoHash?.toLowerCase(), title, quality, size, seeds, source: sourceName };
@@ -706,7 +800,7 @@ function buildStreams(torrents, baseUrl) {
             url: `${baseUrl}/stream/${t.hash}`,
             title: `${quality} | ${info}\n${t.title} | ${t.source}`,
             behaviorHints: {
-                bingeGroup: `render-proxy-${quality}`,
+                bingeGroup: `cloud-proxy-${quality}`,
                 notWebReady: true,
             },
         });
@@ -743,6 +837,10 @@ builder.defineStreamHandler(async ({ type, id }) => {
                 fetchMediaFusion('movie', id),
                 fetchTorrentioRemix('movie', id),
                 fetchOrion('movie', id),
+                fetchDebridio('movie', id),
+                fetchJackettio('movie', id),
+                fetchMediaFusionIndian('movie', id),
+                fetchPiracyPlus('movie', id),
             ]);
             for (const r of w2) {
                 if (r.status === 'fulfilled' && Array.isArray(r.value)) allTorrents.push(...r.value);
@@ -765,6 +863,12 @@ builder.defineStreamHandler(async ({ type, id }) => {
                     torrentFunkSearch(qTitle),
                     torLockSearch(qTitle),
                     torrentProjectSearch(qTitle),
+                    zooqleSearch(qTitle),
+                    katSearch(qTitle),
+                    knabenSearch(qTitle),
+                    bt4gSearch(qTitle),
+                    uindexSearch(qTitle),
+                    iDopeSearch(qTitle),
                 ]);
                 for (const r of w3) {
                     if (r.status === 'fulfilled' && Array.isArray(r.value)) allTorrents.push(...r.value);
@@ -808,6 +912,10 @@ builder.defineStreamHandler(async ({ type, id }) => {
                 fetchMediaFusion('series', id),
                 fetchComet('series', id),
                 fetchTorrentioRemix('series', id),
+                fetchOrion('series', id),
+                fetchDebridio('series', id),
+                fetchJackettio('series', id),
+                fetchPiracyPlus('series', id),
             ]);
             for (const r of w2) {
                 if (r.status === 'fulfilled' && r.value.length > 0) allTorrents.push(...r.value);
@@ -827,6 +935,12 @@ builder.defineStreamHandler(async ({ type, id }) => {
                     limeTorrentsSearch(query),
                     torrentFunkSearch(query),
                     torrentProjectSearch(query),
+                    zooqleSearch(query),
+                    katSearch(query),
+                    knabenSearch(query),
+                    bt4gSearch(query),
+                    uindexSearch(query),
+                    iDopeSearch(query),
                 ]);
                 for (const r of w3) {
                     if (r.status === 'fulfilled' && r.value.length > 0) allTorrents.push(...r.value);

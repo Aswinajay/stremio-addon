@@ -1,7 +1,7 @@
 {
     "name": "torrent-to-weblink",
     "version": "4.0.0",
-    "description": "Stremio addon that streams torrents through Render.com — buffer-free movies & series",
+    "description": "Self-hosted Stremio addon that streams torrents through your own cloud — buffer-free movies & series",
     "main": "server.js",
     "scripts": {
         "start": "node server.js"
@@ -22,7 +22,7 @@
         "addon",
         "torrent",
         "streaming",
-        "render"
+        "cloud"
     ],
     "license": "MIT"
 }

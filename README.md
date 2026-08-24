@@ -1,107 +1,73 @@
----
-title: Torrent to weblink
-emoji: 🎬
-colorFrom: purple
-colorTo: indigo
-sdk: docker
-pinned: false
----
-
 # 🎬 Torrent to weblink — The Ultimate Stremio Addon
 
 [![Status](https://img.shields.io/badge/Status-Healthy-brightgreen?style=for-the-badge)](https://stremio.eletroclay.com/health)
 [![Version](https://img.shields.io/badge/Version-4.0.0-blue?style=for-the-badge)](https://github.com/Aswinajay/stremio-addon)
-[![Platform](https://img.shields.io/badge/Host-Render.com-black?style=for-the-badge)](https://render.com)
+[![Host](https://img.shields.io/badge/Host-Google%20Cloud%20Run-4285F4?style=for-the-badge&logo=google-cloud)](https://cloud.run)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-**Torrent to weblink** is a high-performance, self-hosted **Stremio addon** specifically engineered for flawless streaming on free-tier cloud platforms like **Render.com, Railway, and Heroku (512MB RAM limits)**. 
+**Torrent to weblink** is a high-performance, self-hosted **Stremio addon** engineered for flawless streaming on autoscaling cloud platforms like **Google Cloud Run** (scale-to-zero, pay only while streaming).
 
-By utilizing an advanced, predictive RAM controller, this addon streams **4K HDR Movies and TV Series** from **40+ aggregated torrent sources** without ever crashing, buffering, or hitting Memory Limit (OOM) restarts.
-
----
-
-## 🚀 The "Hydra Brain": Advanced Resource Management
-
-Most Stremio torrent addons crash on free hosting because torrenting consumes massive amounts of RAM. **Torrent to weblink** introduces the **Hydra Brain**, a specialized controller that guarantees 100% uptime:
-
-### 🧠 Predictive RAM Guard & Tiered Scaling
-The system continuously monitors your server's RAM usage and **growth velocity (MB/s)**. It predicts memory spikes before they happen and automatically shifts the server into 7 dynamic performance modes:
-- ⚡ **HIGH Mode (<100MB RAM)**: 60+ connections per engine for instant, maximum-speed playback.
-- ⚖️ **BALANCED / MEDIUM Modes**: Dynamically throttles active peer limits to stabilize memory across multiple users.
-- 🚨 **EMERGENCY Mode (>185MB RAM)**: Instantly prunes slow peers down to **1 seeder** per engine, ensuring server survival during heavy loads.
-
-### ⚖️ Weighted Per-Engine Budget
-Instead of splitting peers evenly, the addon analyzes active streaming speeds. **Fast, active streams get a much larger share of the peer budget**, while idle or background engines receive minimal resources.
-
-### 🛡️ High-Value Seed Protection
-Even when the server enters EMERGENCY mode, **Torrent to weblink NEVER disconnects fast seeders (>0.2 MB/s)**. It sacrifices slow or dead peers first, maintaining smooth playback over heavy buffering.
-
-### 📡 Smart Peer Recovery
-When RAM recovers and stabilizes, the addon implements a 30-second cooldown before triggering a **DHT & Tracker Re-announce**, actively inviting new peers to reconnect and restore peak download speeds.
+By utilizing an intelligent engine manager, this addon streams **4K HDR Movies and TV Series** from **40+ aggregated torrent sources** without buffering or OOM restarts.
 
 ---
 
 ## 🔥 Unmatched Streaming Features
 
 - **🌐 40+ Aggregated Scrapers**: Fetches results in real-time from top-tier sources including **The Pirate Bay (TPB), YTS, Torrentio, Comet, MediaFusion, Nyaa, and Jackettio**.
-- **🌊 Smart Scraper Waves**: Scrapers execute in 3 timed waves with automated Garbage Collection (GC) pauses. This prevents the server memory spikes normally caused by bulk API requests.
+- **🌊 Smart Scraper Waves**: Scrapers execute in 3 timed waves with automated Garbage Collection (GC) pauses. This prevents server memory spikes normally caused by bulk API requests.
 - **🧬 Advanced Torrent Merging**: If multiple scrapers find the exact same file (matching hash), the addon **fuses them into a single result**, combining source tags and prioritizing the highest seeder count.
-- **� No Arbitrary Limits**: Watch as many concurrent movies as you want. There are no artificial "Max 3 Streams" limits—engine capacity is 100% dynamic and based solely on available RAM.
-- **🧹 3-Minute Auto-Cleanup**: If you close the Stremio player, the active torrent engine is forcefully terminated 3 minutes later, instantly flushing the RAM cache while allowing enough buffer grace time.
+- **♾️ No Arbitrary Limits**: Watch as many concurrent movies as you want. There are no artificial "Max 3 Streams" limits — capacity is 100% dynamic.
+- **🧹 15-Minute Auto-Cleanup**: Idle torrent engines are terminated after 15 minutes of inactivity, flushing resources automatically.
 
 ---
 
-## 🛠️ How To Deploy Your Own (Free)
+## 🛠️ How To Deploy Your Own
 
-Deploying your own private Stremio server takes less than 2 minutes.
+### Method 1: Google Cloud Run (Recommended — scales to zero)
+Cheapest option: pay **$0 when idle**, auto-scales with demand, and stays within Cloud Run's free tier for personal use.
 
-### Method 1: Deploy to Render.com (Recommended)
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com)
-1. Fork or clone this repository to your GitHub account.
-2. Sign up at [Render.com](https://render.com/).
-3. Click **New** → **Web Service** → Connect your GitHub repository.
-4. Settings:
-   - **Environment**: Node
-   - **Build Command**: `npm install`
-   - **Start Command**: `node server.js`
-   - **Plan**: Free
-5. Click **Deploy Web Service** and wait for it to go live.
+1. Install the [gcloud CLI](https://cloud.google.com/sdk/docs/install) and authenticate:
+   ```bash
+   gcloud auth login
+   gcloud projects create stremio-aswin   # or use an existing project
+   gcloud billing projects link stremio-aswin --billing-account=<YOUR_BILLING_ID>
+   gcloud config set project stremio-aswin
+   ```
+2. Clone and deploy (one command handles build + cheapest autoscaling config):
+   ```bash
+   git clone https://github.com/Aswinajay/stremio-addon.git
+   cd stremio-addon
+   ./deploy.sh
+   ```
+3. Your addon is live at the printed URL. To use a custom domain:
+   ```bash
+   gcloud beta run domain-mappings create --service stremio-addon \
+     --domain stremio.yourdomain.com --region us-central1
+   # then add a CNAME record: stremio -> ghs.googlehosted.com
+   ```
 
-### Method 2: Hugging Face Spaces (FREE 16GB RAM! 🚀)
-This is currently the best "High RAM" free option. It offers **16GB RAM**, which is 32x more than Render's free tier.
+The included `deploy.sh` configures: scale-to-zero (`min-instances=0`), cost-capped autoscaling (`max-instances=3`), 1 vCPU / 512Mi, request-based billing, and a 1-hour timeout for long streams.
 
-1.  **Sign up** at [huggingface.co](https://huggingface.co/).
-2.  Click **New** → **Space**.
-3.  Name your Space (e.g., `my-stremio-addon`).
-4.  **SDK**: Select **Docker** (This is critical).
-5.  **Template**: Choose **Blank**.
-6.  **Public/Private**: Public is fine.
-7.  Once created, click **Files and versions** → **Add file** → **Upload files**.
-8.  Upload everything in this repository (including the `Dockerfile` I created).
-9.  Wait 1 minute for it to build.
-10. Your Space will provide a direct URL (e.g., `https://username-my-stremio-addon.hf.space`). 
-11. Add `/manifest.json` to that URL and paste it into Stremio!
-
-### Method 3: Oracle Cloud Free Tier (24GB RAM - The King 👑)
-If you can get an account, this is the most powerful free server on earth.
-1. Create an "Always Free" instance with **Ampere A1 (ARM)**.
-2. Allocate **24GB of RAM** and 4 OCPUs.
-3. Install Node.js and run the server. It can handle hundreds of 4K streams simultaneously.
-
-### Method 4: Local / VPS Hosting
+### Method 2: Local / VPS Hosting
 ```bash
 git clone https://github.com/Aswinajay/stremio-addon.git
 cd stremio-addon
 npm install
 npm start
-# Server will run on http://localhost:10000
+# Server will run on http://localhost:3000
+```
+
+### Method 3: Any Docker Host
+```bash
+docker build -t stremio-addon .
+docker run -p 3000:8080 -e PUBLIC_URL=https://your-domain.com stremio-addon
 ```
 
 ---
 
 ## 🔌 Quick Install (Use the Live Server)
 
-Don't want to deploy your own? You can use my public, maintained instance of **Torrent to weblink** right now:
+Don't want to deploy your own? Use the public instance of **Torrent to weblink** right now:
 
 1. Open Stremio.
 2. Go to **Addons** → **Add External Addon**.
@@ -123,15 +89,15 @@ Don't want to deploy your own? You can use my public, maintained instance of **T
 
 ## 📊 Real-Time Server Monitoring
 
-**Torrent to weblink** comes with built-in endpoints so you can monitor your server's health and the Hydra Brain's decisions:
-- **Graphical Dashboard**: Navigate to `/dashboard` on your deployed URL to see a live visual feed of Active Engines, Download Speeds, RAM fluctuations, and Dynamic Modes.
-- **Health JSON API**: Navigate to `/health` to output raw server metrics, uptime, and peer allocations.
+Built-in endpoints so you can monitor your server's health:
+- **Graphical Dashboard**: Navigate to `/dashboard` on your deployed URL to see live Active Engines, Download Speeds, Peers, and RAM usage.
+- **Health JSON API**: Navigate to `/health` for raw server metrics and uptime.
 
 ---
 
 ## ☕ Support the Development
 
-Building and maintaining high-performance bypasses for free-tier constraints takes a lot of time and coffee. If this addon improved your streaming experience and saved you money on Debrid services, please consider supporting the developer!
+Building and maintaining high-performance streaming addons takes time and coffee. If this addon improved your streaming experience and saved you money on Debrid services, please consider supporting the developer!
 
 <a href="https://www.buymeacoffee.com/withaswin" target="_blank">
   <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;">

@@ -505,7 +505,9 @@ function getOrCreateEngine(infoHash, torrentName) {
         verify: false,              // Skip piece hash verification to save CPU
         dht: true,                  // DHT enabled
         tracker: true,              // Trackers enabled
-        port: 6881,                 // Standard BT port
+        // Unique port per engine — sharing one port breaks DHT binding
+        // for every engine after the first, killing peer discovery
+        port: 30000 + ((globalThis.__engineCounter = (globalThis.__engineCounter || 0) + 1) % 20000),
     });
 
     const entry = {
@@ -743,7 +745,7 @@ app.get('/stream/:infoHash', (req, res) => {
 
 // ─── Start Server ────────────────────────────────────────
 app.listen(PORT, () => {
-    const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    const baseUrl = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
     console.log(`
 ╔══════════════════════════════════════════════════════╗
 ║             Torrent to weblink v4.0.0              ║
